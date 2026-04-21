@@ -142,13 +142,15 @@ export default function Injections() {
       </div>
 
       {/* Bouton + flottant */}
-      <button
-        onClick={() => setShowModal(true)}
-        className="fixed bottom-20 right-4 w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl z-40"
-        style={{ backgroundColor: '#3a7bd5' }}
-      >
-        +
-      </button>
+      <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex justify-end pr-5 pointer-events-none z-40">
+        <button
+          onClick={() => setShowModal(true)}
+          className="pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl"
+          style={{ backgroundColor: '#3a7bd5' }}
+        >
+          +
+        </button>
+      </div>
 
       {showModal && (
         <Modal
