@@ -2,11 +2,16 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
+function toEmail(identifiant) {
+  return `${identifiant.trim().toLowerCase()}@monpea.app`
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const [mode, setMode] = useState('connexion')
-  const [email, setEmail] = useState('')
+  const [identifiant, setIdentifiant] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [inscriptionOk, setInscriptionOk] = useState(false)
@@ -17,10 +22,24 @@ export default function Login() {
     })
   }, [navigate])
 
+  function resetForm() {
+    setIdentifiant('')
+    setPassword('')
+    setConfirm('')
+    setError('')
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+
+    if (mode === 'inscription' && password !== confirm) {
+      setError('Les mots de passe ne correspondent pas.')
+      return
+    }
+
     setLoading(true)
+    const email = toEmail(identifiant)
 
     let result
     if (mode === 'connexion') {
@@ -41,14 +60,18 @@ export default function Login() {
       setTimeout(() => {
         setInscriptionOk(false)
         setMode('connexion')
-        setEmail('')
-        setPassword('')
+        resetForm()
       }, 3000)
       return
     }
 
     navigate('/dashboard', { replace: true })
   }
+
+  const inputClass =
+    'bg-bg-input border border-border rounded-input px-4 py-3 text-text-primary text-sm outline-none focus:border-accent transition-colors'
+  const labelClass =
+    'text-text-muted text-[10px] uppercase tracking-[2px] font-medium'
 
   return (
     <div className="min-h-screen bg-bg-primary flex flex-col items-center justify-center px-6">
@@ -78,55 +101,68 @@ export default function Login() {
 
       {/* Formulaire */}
       {!inscriptionOk && (
-      <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-text-muted text-[10px] uppercase tracking-[2px] font-medium">
-            Adresse email
-          </label>
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-            className="bg-bg-input border border-border rounded-input px-4 py-3 text-text-primary text-sm outline-none focus:border-accent transition-colors"
-            placeholder="vous@exemple.com"
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-5">
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Identifiant</label>
+            <input
+              type="text"
+              value={identifiant}
+              onChange={e => setIdentifiant(e.target.value)}
+              required
+              autoComplete="username"
+              className={inputClass}
+              placeholder="votre identifiant"
+            />
+          </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-text-muted text-[10px] uppercase tracking-[2px] font-medium">
-            Mot de passe
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            className="bg-bg-input border border-border rounded-input px-4 py-3 text-text-primary text-sm outline-none focus:border-accent transition-colors"
-            placeholder="••••••••"
-          />
-        </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>Mot de passe</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              autoComplete={mode === 'connexion' ? 'current-password' : 'new-password'}
+              className={inputClass}
+              placeholder="••••••••"
+            />
+          </div>
 
-        {error && (
-          <p className="text-loss text-xs text-center">{error}</p>
-        )}
+          {mode === 'inscription' && (
+            <div className="flex flex-col gap-1.5">
+              <label className={labelClass}>Confirmer le mot de passe</label>
+              <input
+                type="password"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                required
+                autoComplete="new-password"
+                className={inputClass}
+                placeholder="••••••••"
+              />
+            </div>
+          )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-accent text-white rounded-input py-3 text-sm font-semibold disabled:opacity-50 transition-opacity"
-        >
-          {loading ? 'Chargement…' : mode === 'connexion' ? 'Connexion' : 'Créer un compte'}
-        </button>
+          {error && (
+            <p className="text-loss text-xs text-center">{error}</p>
+          )}
 
-        <button
-          type="button"
-          onClick={() => { setMode(mode === 'connexion' ? 'inscription' : 'connexion'); setError('') }}
-          className="border border-border text-[#5a7aaa] rounded-input py-3 text-sm bg-transparent"
-        >
-          {mode === 'connexion' ? 'Créer un compte' : 'J\'ai déjà un compte'}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-accent text-white rounded-input py-3 text-sm font-semibold disabled:opacity-50 transition-opacity"
+          >
+            {loading ? 'Chargement…' : mode === 'connexion' ? 'Connexion' : 'Créer mon compte'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setMode(mode === 'connexion' ? 'inscription' : 'connexion'); resetForm() }}
+            className="border border-border text-[#5a7aaa] rounded-input py-3 text-sm bg-transparent"
+          >
+            {mode === 'connexion' ? 'Créer un compte' : 'J\'ai déjà un compte'}
+          </button>
+        </form>
       )}
     </div>
   )
