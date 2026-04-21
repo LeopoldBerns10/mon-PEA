@@ -72,10 +72,13 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
         if (partsRestantes <= 0.0001) break
         const partsOrdre = Number(ordre.nb_parts)
         if (partsOrdre <= partsRestantes + 0.0001) {
-          // Full order consumed → mark as vendu
+          // Full order consumed → mark as vendu with per-order pct_realise
+          const pctOrdre = Number(ordre.pru) > 0
+            ? (Number(prixVente) - Number(ordre.pru)) / Number(ordre.pru) * 100
+            : null
           await supabase.from('ordres').update({
             statut: 'vendu',
-            pct_realise: pctRealise,
+            pct_realise: pctOrdre,
             prix_vente_reel: Number(prixVente),
           }).eq('id', ordre.id)
           partsRestantes -= partsOrdre
@@ -88,7 +91,7 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
         }
       }
 
-      // Insert vente
+      // Insert vente with stored gain
       const { data: { user } } = await supabase.auth.getUser()
       const { error: err } = await supabase.from('ventes').insert({
         user_id: user.id,
@@ -97,6 +100,8 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
         nb_parts: Number(nbParts),
         prix_vente: Number(prixVente),
         frais: Number(frais || 0),
+        gain_euros: gainNet,
+        gain_pct: pctRealise,
       })
       if (err) { setError(err.message); setLoading(false); return }
       onSaved()
@@ -224,22 +229,11 @@ export default function Ventes() {
 
   useEffect(() => { fetchData() }, [])
 
-  // Calculate gain for display (uses PRU from ordres still open + historical)
-  // For ventes display we store basic info; gain is shown if we can compute it
   function getGainDisplay(v) {
-    // Try to find PRU from current open orders (approximation for display)
-    const ordresDeCetIndice = ordresOuverts.filter(o => o.indice === v.indice)
-    if (ordresDeCetIndice.length > 0) {
-      const totalInvesti = ordresDeCetIndice.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
-      const totalParts = ordresDeCetIndice.reduce((s, o) => s + Number(o.nb_parts), 0)
-      const pruMoyen = totalParts > 0 ? totalInvesti / totalParts : 0
-      const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
-      const cout = Number(v.nb_parts) * pruMoyen
-      const gain = produit - cout
-      const pct = cout > 0 ? (gain / cout) * 100 : null
-      return { produit, gain, pct }
-    }
     const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
+    if (v.gain_euros != null && v.gain_pct != null) {
+      return { produit, gain: Number(v.gain_euros), pct: Number(v.gain_pct) }
+    }
     return { produit, gain: null, pct: null }
   }
 
