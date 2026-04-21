@@ -49,35 +49,47 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
-      const [{ data: injections }, { data: ordres }, { data: actifs }] = await Promise.all([
+      const [{ data: injections }, { data: ordres }, { data: ventes }, { data: actifs }] = await Promise.all([
         supabase.from('injections').select('montant'),
         supabase.from('ordres').select('indice, nb_parts, pru, frais, statut'),
+        supabase.from('ventes').select('nb_parts, prix_vente, frais'),
         supabase.from('actifs').select('ticker, ticker_yahoo'),
       ])
 
       const totalInjecte = (injections || []).reduce((s, r) => s + Number(r.montant), 0)
 
-      // Only open orders for portfolio calculation
+      // SUM(prix_ttc) des ordres ouverts
       const ordresOuverts = (ordres || []).filter(isOuvert)
+      const totalPrixTTCOuverts = ordresOuverts.reduce(
+        (s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0
+      )
+
+      // SUM(montant_recupere) des ventes = nb_parts * prix_vente - frais
+      const totalMontantRecupere = (ventes || []).reduce(
+        (s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0
+      )
+
+      // Liquidités = injections - prix_ttc_ouverts + montant_recupere_ventes
+      const liquidites = totalInjecte - totalPrixTTCOuverts + totalMontantRecupere
+
+      // Gain net = Liquidités - Total injecté
+      const gainNet = liquidites - totalInjecte
+      const gainPct = totalInjecte > 0 ? (gainNet / totalInjecte) * 100 : 0
 
       // Build positions map from open orders
       const posMap = {}
       ordresOuverts.forEach(o => {
-        if (!posMap[o.indice]) posMap[o.indice] = { nbParts: 0, coutTotal: 0, fraisTotal: 0 }
+        if (!posMap[o.indice]) posMap[o.indice] = { nbParts: 0, coutTotal: 0 }
         posMap[o.indice].nbParts += Number(o.nb_parts)
         posMap[o.indice].coutTotal += Number(o.nb_parts) * Number(o.pru)
-        posMap[o.indice].fraisTotal += Number(o.frais)
       })
-
-      const totalInvesti = Object.values(posMap).reduce((s, p) => s + p.coutTotal + p.fraisTotal, 0)
-      const liquidites = totalInjecte - totalInvesti
 
       // Fetch live prices
       const actifsEnPF = (actifs || []).filter(a => posMap[a.ticker])
       const prixLive = actifsEnPF.length > 0 ? await getPrixMultiple(actifsEnPF) : {}
       setPrixMap(prixLive)
 
-      // Portfolio value with live prices
+      // Valeur portefeuille = Liquidités + SUM(nb_parts * prix_live)
       let valeurPositions = 0
       const positionsArr = Object.entries(posMap).map(([indice, p]) => {
         const prix = prixLive[indice]
@@ -89,9 +101,7 @@ export default function Dashboard() {
         return { indice, nbParts: p.nbParts, pruMoyen, prix, valeur, gainEuros, gainPct }
       })
 
-      const valeurPF = valeurPositions + liquidites
-      const gainNet = valeurPF - totalInjecte
-      const gainPct = totalInjecte > 0 ? (gainNet / totalInjecte) * 100 : 0
+      const valeurPF = liquidites + valeurPositions
 
       setStats({ totalInjecte, liquidites, valeurPF, gainNet, gainPct })
       setPositions(positionsArr.filter(p => p.nbParts > 0.0001))
