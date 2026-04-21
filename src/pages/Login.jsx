@@ -1,20 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
-function toEmail(identifiant) {
-  return `${identifiant.trim().toLowerCase()}@monpea.app`
-}
-
 export default function Login() {
   const navigate = useNavigate()
-  const [mode, setMode] = useState('connexion')
-  const [identifiant, setIdentifiant] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [inscriptionOk, setInscriptionOk] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -22,61 +11,19 @@ export default function Login() {
     })
   }, [navigate])
 
-  function resetForm() {
-    setIdentifiant('')
-    setPassword('')
-    setConfirm('')
-    setError('')
+  async function handleGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'https://mon-pea-web.vercel.app/dashboard',
+      },
+    })
   }
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setError('')
-
-    if (mode === 'inscription' && password !== confirm) {
-      setError('Les mots de passe ne correspondent pas.')
-      return
-    }
-
-    setLoading(true)
-    const email = toEmail(identifiant)
-
-    let result
-    if (mode === 'connexion') {
-      result = await supabase.auth.signInWithPassword({ email, password })
-    } else {
-      result = await supabase.auth.signUp({ email, password })
-    }
-
-    setLoading(false)
-
-    if (result.error) {
-      setError(result.error.message)
-      return
-    }
-
-    if (mode === 'inscription') {
-      setInscriptionOk(true)
-      setTimeout(() => {
-        setInscriptionOk(false)
-        setMode('connexion')
-        resetForm()
-      }, 3000)
-      return
-    }
-
-    navigate('/dashboard', { replace: true })
-  }
-
-  const inputClass =
-    'bg-bg-input border border-border rounded-input px-4 py-3 text-text-primary text-sm outline-none focus:border-accent transition-colors'
-  const labelClass =
-    'text-text-muted text-[10px] uppercase tracking-[2px] font-medium'
 
   return (
     <div className="min-h-screen bg-bg-primary flex flex-col items-center justify-center px-6">
       {/* Logo */}
-      <div className="flex flex-col items-center mb-10">
+      <div className="flex flex-col items-center mb-12">
         <div
           className="w-12 h-12 rounded-input flex items-center justify-center mb-3"
           style={{ backgroundColor: '#3a7bd5' }}
@@ -90,80 +37,22 @@ export default function Login() {
         <p className="text-text-muted text-xs tracking-widest uppercase mt-1">Suivi de portefeuille</p>
       </div>
 
-      {/* Message post-inscription */}
-      {inscriptionOk && (
-        <div className="w-full max-w-sm bg-bg-card border border-border rounded-card p-5 text-center">
-          <p className="text-gain text-sm leading-relaxed">
-            Compte créé avec succès. En attente de validation par l'administrateur. Vous serez contacté.
-          </p>
-        </div>
-      )}
-
-      {/* Formulaire */}
-      {!inscriptionOk && (
-        <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-5">
-          <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Identifiant</label>
-            <input
-              type="text"
-              value={identifiant}
-              onChange={e => setIdentifiant(e.target.value)}
-              required
-              autoComplete="username"
-              className={inputClass}
-              placeholder="votre identifiant"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className={labelClass}>Mot de passe</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              autoComplete={mode === 'connexion' ? 'current-password' : 'new-password'}
-              className={inputClass}
-              placeholder="••••••••"
-            />
-          </div>
-
-          {mode === 'inscription' && (
-            <div className="flex flex-col gap-1.5">
-              <label className={labelClass}>Confirmer le mot de passe</label>
-              <input
-                type="password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                required
-                autoComplete="new-password"
-                className={inputClass}
-                placeholder="••••••••"
-              />
-            </div>
-          )}
-
-          {error && (
-            <p className="text-loss text-xs text-center">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-accent text-white rounded-input py-3 text-sm font-semibold disabled:opacity-50 transition-opacity"
-          >
-            {loading ? 'Chargement…' : mode === 'connexion' ? 'Connexion' : 'Créer mon compte'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setMode(mode === 'connexion' ? 'inscription' : 'connexion'); resetForm() }}
-            className="border border-border text-[#5a7aaa] rounded-input py-3 text-sm bg-transparent"
-          >
-            {mode === 'connexion' ? 'Créer un compte' : 'J\'ai déjà un compte'}
-          </button>
-        </form>
-      )}
+      {/* Bouton Google */}
+      <div className="w-full max-w-sm">
+        <button
+          onClick={handleGoogle}
+          className="w-full flex items-center justify-center gap-3 bg-bg-card border border-border rounded-input py-3.5 text-text-primary text-sm font-medium hover:border-accent transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            <path fill="none" d="M0 0h48v48H0z"/>
+          </svg>
+          Continuer avec Google
+        </button>
+      </div>
     </div>
   )
 }

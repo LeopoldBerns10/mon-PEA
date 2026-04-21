@@ -2,8 +2,22 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
-function Avatar({ email }) {
-  const initiale = email ? email[0].toUpperCase() : '?'
+function Avatar({ user }) {
+  const photo = user?.user_metadata?.avatar_url
+  const initiale = user?.user_metadata?.full_name?.[0]?.toUpperCase()
+    || user?.email?.[0]?.toUpperCase()
+    || '?'
+
+  if (photo) {
+    return (
+      <img
+        src={photo}
+        alt="avatar"
+        className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+      />
+    )
+  }
+
   return (
     <div
       className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
@@ -89,7 +103,10 @@ export default function Dashboard() {
     navigate('/login', { replace: true })
   }
 
-  const prenom = user?.user_metadata?.prenom || user?.email || ''
+  const prenom = user?.user_metadata?.full_name?.split(' ')[0]
+    || user?.user_metadata?.name?.split(' ')[0]
+    || user?.email
+    || ''
 
   return (
     <div className="min-h-screen bg-bg-primary flex flex-col max-w-md mx-auto">
@@ -106,7 +123,7 @@ export default function Dashboard() {
           >
             Sortir
           </button>
-          <Avatar email={user?.email} />
+          <Avatar user={user} />
         </div>
       </div>
 
