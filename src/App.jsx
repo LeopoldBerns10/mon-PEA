@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Ordres from './pages/Ordres'
 import Injections from './pages/Injections'
 import Ventes from './pages/Ventes'
+import Actifs from './pages/Actifs'
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/ordres" element={<ProtectedRoute><Ordres /></ProtectedRoute>} />
         <Route path="/injections" element={<ProtectedRoute><Injections /></ProtectedRoute>} />
         <Route path="/ventes" element={<ProtectedRoute><Ventes /></ProtectedRoute>} />
+        <Route path="/actifs" element={<ProtectedRoute><Actifs /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )

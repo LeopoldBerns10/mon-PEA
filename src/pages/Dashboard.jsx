@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import PageWrapper from '../components/PageWrapper'
+import { getPrixMultiple } from '../services/prixLive'
 
 const B = { border: '1px solid rgba(255,255,255,0.12)' }
 const HERO = { background: 'linear-gradient(135deg,#0d1b3e,#0c0c24)', border: '1px solid #2a4a8a', boxShadow: '0 0 24px rgba(58,123,213,0.15)' }
@@ -13,6 +14,9 @@ function fmt(val) {
 function fmtPct(val) {
   const n = Number(val || 0)
   return (n >= 0 ? '+' : '') + n.toFixed(2) + ' %'
+}
+function fmtNum(val, dec = 4) {
+  return Number(val || 0).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
 }
 
 function Label({ children }) {
@@ -27,11 +31,15 @@ function Card({ children, style, className = '' }) {
   )
 }
 
+function gainColor(val) { return val >= 0 ? '#2a9a5a' : '#a04a4a' }
+function isOuvert(o) { return !o.statut || o.statut === 'ouvert' }
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [user, setUser] = useState(null)
   const [stats, setStats] = useState(null)
   const [positions, setPositions] = useState([])
+  const [prixMap, setPrixMap] = useState({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -41,38 +49,52 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
-      const [{ data: injections }, { data: ordres }, { data: ventes }] = await Promise.all([
+      const [{ data: injections }, { data: ordres }, { data: actifs }] = await Promise.all([
         supabase.from('injections').select('montant'),
-        supabase.from('ordres').select('indice, nb_parts, pru, prix_ttc'),
-        supabase.from('ventes').select('indice, nb_parts, prix_vente, frais'),
+        supabase.from('ordres').select('indice, nb_parts, pru, frais, statut'),
+        supabase.from('actifs').select('ticker, ticker_yahoo'),
       ])
+
       const totalInjecte = (injections || []).reduce((s, r) => s + Number(r.montant), 0)
-      const totalAchats = (ordres || []).reduce((s, r) => s + Number(r.prix_ttc), 0)
-      const totalProdVentes = (ventes || []).reduce((s, r) => s + Number(r.nb_parts) * Number(r.prix_vente) - Number(r.frais), 0)
-      const totalInvesti = totalAchats - totalProdVentes
+
+      // Only open orders for portfolio calculation
+      const ordresOuverts = (ordres || []).filter(isOuvert)
+
+      // Build positions map from open orders
+      const posMap = {}
+      ordresOuverts.forEach(o => {
+        if (!posMap[o.indice]) posMap[o.indice] = { nbParts: 0, coutTotal: 0, fraisTotal: 0 }
+        posMap[o.indice].nbParts += Number(o.nb_parts)
+        posMap[o.indice].coutTotal += Number(o.nb_parts) * Number(o.pru)
+        posMap[o.indice].fraisTotal += Number(o.frais)
+      })
+
+      const totalInvesti = Object.values(posMap).reduce((s, p) => s + p.coutTotal + p.fraisTotal, 0)
       const liquidites = totalInjecte - totalInvesti
-      const gainNet = liquidites - totalInjecte
+
+      // Fetch live prices
+      const actifsEnPF = (actifs || []).filter(a => posMap[a.ticker])
+      const prixLive = actifsEnPF.length > 0 ? await getPrixMultiple(actifsEnPF) : {}
+      setPrixMap(prixLive)
+
+      // Portfolio value with live prices
+      let valeurPositions = 0
+      const positionsArr = Object.entries(posMap).map(([indice, p]) => {
+        const prix = prixLive[indice]
+        const valeur = prix ? p.nbParts * prix : p.coutTotal
+        const pruMoyen = p.nbParts > 0 ? p.coutTotal / p.nbParts : 0
+        const gainEuros = prix ? (prix - pruMoyen) * p.nbParts : 0
+        const gainPct = pruMoyen > 0 && prix ? ((prix - pruMoyen) / pruMoyen) * 100 : 0
+        valeurPositions += valeur
+        return { indice, nbParts: p.nbParts, pruMoyen, prix, valeur, gainEuros, gainPct }
+      })
+
+      const valeurPF = valeurPositions + liquidites
+      const gainNet = valeurPF - totalInjecte
       const gainPct = totalInjecte > 0 ? (gainNet / totalInjecte) * 100 : 0
 
-      setStats({ totalInjecte, liquidites, valeurPF: liquidites, gainNet, gainPct })
-
-      const partsAchetees = {}, coutTotal = {}
-      ;(ordres || []).forEach(o => {
-        partsAchetees[o.indice] = (partsAchetees[o.indice] || 0) + Number(o.nb_parts)
-        coutTotal[o.indice] = (coutTotal[o.indice] || 0) + Number(o.nb_parts) * Number(o.pru)
-      })
-      const partsVendues = {}
-      ;(ventes || []).forEach(v => { partsVendues[v.indice] = (partsVendues[v.indice] || 0) + Number(v.nb_parts) })
-
-      setPositions(
-        Object.keys(partsAchetees)
-          .map(indice => ({
-            indice,
-            restantes: partsAchetees[indice] - (partsVendues[indice] || 0),
-            pruMoyen: coutTotal[indice] / partsAchetees[indice],
-          }))
-          .filter(p => p.restantes > 0.0001)
-      )
+      setStats({ totalInjecte, liquidites, valeurPF, gainNet, gainPct })
+      setPositions(positionsArr.filter(p => p.nbParts > 0.0001))
       setLoading(false)
     }
     fetchData()
@@ -86,7 +108,7 @@ export default function Dashboard() {
   const prenom = user?.user_metadata?.full_name?.split(' ')[0] || user?.email || ''
   const photo = user?.user_metadata?.avatar_url
   const gainPositif = stats?.gainNet >= 0
-  const gainColor = gainPositif ? '#2a9a5a' : '#a04a4a'
+  const gainCol = gainColor(stats?.gainNet || 0)
 
   return (
     <PageWrapper>
@@ -129,11 +151,11 @@ export default function Dashboard() {
           </Card>
           <Card className="col-span-2 md:col-span-1">
             <Label>Gain net</Label>
-            <p className="text-[22px] font-black tracking-tight" style={{ color: gainColor }}>
+            <p className="text-[22px] font-black tracking-tight" style={{ color: gainCol }}>
               {loading ? '—' : fmt(stats?.gainNet)}
             </p>
             {!loading && stats?.totalInjecte > 0 && (
-              <p className="text-sm font-bold mt-0.5" style={{ color: gainColor }}>{fmtPct(stats?.gainPct)}</p>
+              <p className="text-sm font-bold mt-0.5" style={{ color: gainCol }}>{fmtPct(stats?.gainPct)}</p>
             )}
           </Card>
         </div>
@@ -154,11 +176,17 @@ export default function Dashboard() {
                   <Card key={p.indice} className="flex items-center justify-between">
                     <div>
                       <span style={BADGE}>{p.indice}</span>
-                      <p className="text-text-muted text-xs mt-1.5">{p.restantes.toFixed(4)} parts</p>
+                      <p className="text-text-muted text-xs mt-1.5">{fmtNum(p.nbParts)} parts</p>
+                      {p.prix && <p className="text-text-primary text-sm font-bold mt-0.5">{fmt(p.valeur)}</p>}
                     </div>
                     <div className="text-right">
                       <Label>PRU moyen</Label>
-                      <p className="text-text-primary font-bold text-sm">{Number(p.pruMoyen).toLocaleString('fr-FR', { minimumFractionDigits: 4 })} €</p>
+                      <p className="text-text-primary font-bold text-sm">{fmtNum(p.pruMoyen)} €</p>
+                      {p.prix && (
+                        <p className="text-sm font-bold" style={{ color: gainColor(p.gainPct) }}>
+                          {p.gainPct >= 0 ? '+' : ''}{p.gainPct.toFixed(2)} %
+                        </p>
+                      )}
                     </div>
                   </Card>
                 ))}
@@ -169,7 +197,7 @@ export default function Dashboard() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                      {['Indice', 'Parts', 'PRU moyen', 'Valeur estimée'].map(h => (
+                      {['Indice', 'Parts', 'PRU moyen', 'Prix live', 'Valeur', 'Gain %', 'Gain €'].map(h => (
                         <th key={h} className="text-left px-5 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted">{h}</th>
                       ))}
                     </tr>
@@ -178,9 +206,18 @@ export default function Dashboard() {
                     {positions.map((p, i) => (
                       <tr key={p.indice} style={{ borderBottom: i < positions.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                         <td className="px-5 py-3"><span style={BADGE}>{p.indice}</span></td>
-                        <td className="px-5 py-3 text-text-primary font-medium">{p.restantes.toFixed(4)}</td>
-                        <td className="px-5 py-3 text-text-primary font-medium">{Number(p.pruMoyen).toLocaleString('fr-FR', { minimumFractionDigits: 4 })} €</td>
-                        <td className="px-5 py-3 text-text-muted text-xs">—</td>
+                        <td className="px-5 py-3 text-text-primary font-medium">{fmtNum(p.nbParts)}</td>
+                        <td className="px-5 py-3 text-text-primary font-medium">{fmtNum(p.pruMoyen)} €</td>
+                        <td className="px-5 py-3 text-text-primary font-bold">
+                          {p.prix ? fmt(p.prix) : <span style={{ color: '#3a5080' }}>—</span>}
+                        </td>
+                        <td className="px-5 py-3 text-text-primary font-bold">{fmt(p.valeur)}</td>
+                        <td className="px-5 py-3 font-bold" style={{ color: p.prix ? gainColor(p.gainPct) : '#3a5080' }}>
+                          {p.prix ? (p.gainPct >= 0 ? '+' : '') + p.gainPct.toFixed(2) + ' %' : '—'}
+                        </td>
+                        <td className="px-5 py-3 font-bold" style={{ color: p.prix ? gainColor(p.gainEuros) : '#3a5080' }}>
+                          {p.prix ? (p.gainEuros >= 0 ? '+' : '') + fmt(p.gainEuros) : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

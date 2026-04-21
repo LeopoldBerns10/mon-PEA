@@ -39,6 +39,15 @@ const TABS = [
       </svg>
     ),
   },
+  {
+    label: 'Actifs',
+    path: '/actifs',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
+      </svg>
+    ),
+  },
 ]
 
 export default function BottomNav() {
@@ -56,7 +65,7 @@ export default function BottomNav() {
           <button
             key={tab.path}
             onClick={() => navigate(tab.path)}
-            className="flex flex-col items-center gap-1 py-3 px-4 flex-1 relative"
+            className="flex flex-col items-center gap-1 py-3 px-2 flex-1 relative"
             style={{ color: active ? '#5a9aee' : '#3a5080' }}
           >
             {active && (
@@ -66,7 +75,7 @@ export default function BottomNav() {
               />
             )}
             {tab.icon}
-            <span className="text-[9px] uppercase tracking-widest font-mono font-medium">{tab.label}</span>
+            <span className="text-[8px] uppercase tracking-widest font-mono font-medium">{tab.label}</span>
           </button>
         )
       })}
