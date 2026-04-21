@@ -1,10 +1,8 @@
 export async function getPrixLive(tickerYahoo) {
   try {
-    const url = `https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/${tickerYahoo}?interval=1d&range=1d`
-    const res = await fetch(url)
+    const res = await fetch(`/api/prix?ticker=${tickerYahoo}`)
     const data = await res.json()
-    const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice
-    return price || null
+    return data.price
   } catch {
     return null
   }
