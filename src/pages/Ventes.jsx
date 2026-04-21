@@ -14,38 +14,96 @@ function fmt(val, dec = 2) {
 }
 
 function gainColor(val) { return val >= 0 ? '#2a9a5a' : '#a04a4a' }
+function isOuvert(o) { return !o.statut || o.statut === 'ouvert' }
 
-function Modal({ onClose, onSaved, positions }) {
+function Modal({ onClose, onSaved, ordresOuverts }) {
   const [date, setDate] = useState(today())
-  const [indice, setIndice] = useState(positions[0]?.indice || '')
+  const [indice, setIndice] = useState('')
   const [nbParts, setNbParts] = useState('')
   const [prixVente, setPrixVente] = useState('')
   const [frais, setFrais] = useState('1.89')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const position = positions.find(p => p.indice === indice)
+  // Build positions from open orders
+  const positionsMap = {}
+  ordresOuverts.forEach(o => {
+    if (!positionsMap[o.indice]) positionsMap[o.indice] = { parts: 0, ordres: [] }
+    positionsMap[o.indice].parts += Number(o.nb_parts)
+    positionsMap[o.indice].ordres.push(o)
+  })
+  const positions = Object.entries(positionsMap)
+    .filter(([, p]) => p.parts > 0.0001)
+    .map(([ticker, p]) => ({ indice: ticker, parts: p.parts, ordres: p.ordres }))
+
+  const positionSel = positions.find(p => p.indice === indice)
+
+  useEffect(() => {
+    if (positions.length > 0 && !indice) setIndice(positions[0].indice)
+  }, [positions.length])
+
+  // Calculate PRU moyen pondéré of all open orders for selected indice
+  const ordresDeLIndice = positionSel?.ordres || []
+  const totalInvesti = ordresDeLIndice.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+  const totalParts = ordresDeLIndice.reduce((s, o) => s + Number(o.nb_parts), 0)
+  const pruMoyen = totalParts > 0 ? totalInvesti / totalParts : 0
+
   const montantRecupere = nbParts && prixVente ? Number(nbParts) * Number(prixVente) - Number(frais || 0) : null
-  const coutAchat = nbParts && position ? Number(nbParts) * position.pruMoyen : null
-  const gainPerte = montantRecupere !== null && coutAchat !== null ? montantRecupere - coutAchat : null
-  const gainPct = gainPerte !== null && coutAchat > 0 ? (gainPerte / coutAchat) * 100 : null
+  const coutAchat = nbParts ? Number(nbParts) * pruMoyen : null
+  const gainNet = montantRecupere !== null && coutAchat !== null ? montantRecupere - coutAchat : null
+  const pctRealise = gainNet !== null && coutAchat > 0 ? (gainNet / coutAchat) * 100 : null
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
-    if (position && Number(nbParts) > position.restantes) {
-      setError(`Maximum ${fmt(position.restantes, 4)} parts disponibles.`)
+    if (!positionSel) { setError('Aucune position disponible'); return }
+    if (Number(nbParts) > positionSel.parts + 0.0001) {
+      setError(`Maximum ${fmt(positionSel.parts, 4)} parts disponibles`)
       return
     }
+
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    const { error: err } = await supabase.from('ventes').insert({
-      user_id: user.id, date, indice,
-      nb_parts: Number(nbParts), prix_vente: Number(prixVente), frais: Number(frais || 0),
-    })
-    setLoading(false)
-    if (err) { setError(err.message); return }
-    onSaved()
+    try {
+      // FIFO: mark orders as vendu (oldest first)
+      const ordresFIFO = [...ordresDeLIndice].sort((a, b) => new Date(a.date) - new Date(b.date))
+      let partsRestantes = Number(nbParts)
+
+      for (const ordre of ordresFIFO) {
+        if (partsRestantes <= 0.0001) break
+        const partsOrdre = Number(ordre.nb_parts)
+        if (partsOrdre <= partsRestantes + 0.0001) {
+          // Full order consumed → mark as vendu
+          await supabase.from('ordres').update({
+            statut: 'vendu',
+            pct_realise: pctRealise,
+            prix_vente_reel: Number(prixVente),
+          }).eq('id', ordre.id)
+          partsRestantes -= partsOrdre
+        } else {
+          // Partial: reduce nb_parts of this order
+          await supabase.from('ordres').update({
+            nb_parts: partsOrdre - partsRestantes,
+          }).eq('id', ordre.id)
+          partsRestantes = 0
+        }
+      }
+
+      // Insert vente
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error: err } = await supabase.from('ventes').insert({
+        user_id: user.id,
+        date,
+        indice,
+        nb_parts: Number(nbParts),
+        prix_vente: Number(prixVente),
+        frais: Number(frais || 0),
+      })
+      if (err) { setError(err.message); setLoading(false); return }
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+      setLoading(false)
+    }
   }
 
   return (
@@ -64,30 +122,49 @@ function Modal({ onClose, onSaved, positions }) {
               <label className={LABEL}>Date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} required className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
             </div>
+
             <div className="flex flex-col gap-1.5">
-              <label className={LABEL}>Indice</label>
+              <label className={LABEL}>Actif</label>
               <select value={indice} onChange={e => setIndice(e.target.value)} required className={INPUT} style={{ ...B, backgroundColor: '#07071a' }}>
                 {positions.map(p => (
-                  <option key={p.indice} value={p.indice}>{p.indice} — {fmt(p.restantes, 4)} parts dispo</option>
+                  <option key={p.indice} value={p.indice}>
+                    {p.indice} — {fmt(p.parts, 4)} parts disponibles
+                  </option>
                 ))}
               </select>
             </div>
-            {position && (
+
+            {positionSel && (
               <div className="rounded-input px-4 py-2.5" style={{ backgroundColor: '#07071a', ...B }}>
-                <p className={LABEL}>PRU moyen d'achat</p>
-                <p className="text-text-primary font-bold text-sm mt-1">{fmt(position.pruMoyen, 4)} €</p>
+                <p className={LABEL}>PRU moyen pondéré</p>
+                <p className="text-text-primary font-bold text-sm mt-1">{fmt(pruMoyen, 4)} €</p>
               </div>
             )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className={LABEL}>Nombre de parts</label>
-                <input type="number" step="0.0001" min="0" max={position?.restantes} value={nbParts} onChange={e => setNbParts(e.target.value)} required placeholder="0.0000" className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+                <input
+                  type="number" step="0.0001" min="0"
+                  max={positionSel?.parts}
+                  value={nbParts}
+                  onChange={e => setNbParts(e.target.value)}
+                  required placeholder="0.0000"
+                  className={INPUT} style={{ ...B, backgroundColor: '#07071a' }}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className={LABEL}>Prix de vente (€)</label>
-                <input type="number" step="0.0001" min="0" value={prixVente} onChange={e => setPrixVente(e.target.value)} required placeholder="0.0000" className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+                <input
+                  type="number" step="0.0001" min="0"
+                  value={prixVente}
+                  onChange={e => setPrixVente(e.target.value)}
+                  required placeholder="0.0000"
+                  className={INPUT} style={{ ...B, backgroundColor: '#07071a' }}
+                />
               </div>
             </div>
+
             <div className="flex flex-col gap-1.5">
               <label className={LABEL}>Frais (€)</label>
               <input type="number" step="0.01" min="0" value={frais} onChange={e => setFrais(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
@@ -99,20 +176,24 @@ function Modal({ onClose, onSaved, positions }) {
                   <p className={LABEL}>Montant récupéré</p>
                   <p className="text-text-primary font-bold text-sm">{fmt(montantRecupere)} €</p>
                 </div>
-                {gainPerte !== null && (
+                {gainNet !== null && (
                   <div className="flex justify-between">
                     <p className={LABEL}>Gain / Perte</p>
-                    <p className="font-bold text-sm" style={{ color: gainColor(gainPerte) }}>
-                      {gainPerte >= 0 ? '+' : ''}{fmt(gainPerte)} € ({gainPct >= 0 ? '+' : ''}{fmt(gainPct)} %)
+                    <p className="font-bold text-sm" style={{ color: gainColor(gainNet) }}>
+                      {gainNet >= 0 ? '+' : ''}{fmt(gainNet)} €
+                      {pctRealise !== null && <span className="text-xs ml-1">({pctRealise >= 0 ? '+' : ''}{fmt(pctRealise)} %)</span>}
                     </p>
                   </div>
                 )}
               </div>
             )}
 
-            {error && <p className="text-loss text-xs text-center">{error}</p>}
+            {error && <p className="text-xs text-center" style={{ color: '#a04a4a' }}>{error}</p>}
+
             <div className="flex gap-3 mt-2">
-              <button type="button" onClick={onClose} className="flex-1 rounded-input py-3 text-sm font-bold" style={{ ...B, color: '#5a9aee', backgroundColor: 'transparent' }}>Annuler</button>
+              <button type="button" onClick={onClose} className="flex-1 rounded-input py-3 text-sm font-bold" style={{ ...B, color: '#5a9aee', backgroundColor: 'transparent' }}>
+                Annuler
+              </button>
               <button type="submit" disabled={loading} className="flex-1 rounded-input py-3 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#3a7bd5' }}>
                 {loading ? 'Enregistrement…' : 'Enregistrer la vente'}
               </button>
@@ -126,51 +207,46 @@ function Modal({ onClose, onSaved, positions }) {
 
 export default function Ventes() {
   const [ventes, setVentes] = useState([])
-  const [positions, setPositions] = useState([])
+  const [ordresOuverts, setOrdresOuverts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: ventesData }, { data: ordres }, { data: ventesPos }] = await Promise.all([
+    const [{ data: ventesData }, { data: ordresData }] = await Promise.all([
       supabase.from('ventes').select('*').order('date', { ascending: false }),
-      supabase.from('ordres').select('indice, nb_parts, pru'),
-      supabase.from('ventes').select('indice, nb_parts'),
+      supabase.from('ordres').select('*').order('date', { ascending: true }),
     ])
     setVentes(ventesData || [])
-
-    const partsAchetees = {}, coutTotal = {}
-    ;(ordres || []).forEach(o => {
-      partsAchetees[o.indice] = (partsAchetees[o.indice] || 0) + Number(o.nb_parts)
-      coutTotal[o.indice] = (coutTotal[o.indice] || 0) + Number(o.nb_parts) * Number(o.pru)
-    })
-    const partsVendues = {}
-    ;(ventesPos || []).forEach(v => { partsVendues[v.indice] = (partsVendues[v.indice] || 0) + Number(v.nb_parts) })
-
-    setPositions(
-      Object.keys(partsAchetees)
-        .map(indice => ({
-          indice,
-          restantes: partsAchetees[indice] - (partsVendues[indice] || 0),
-          pruMoyen: coutTotal[indice] / partsAchetees[indice],
-        }))
-        .filter(p => p.restantes > 0.0001)
-    )
+    setOrdresOuverts((ordresData || []).filter(isOuvert))
     setLoading(false)
   }
 
   useEffect(() => { fetchData() }, [])
 
-  function ventePRU(v) {
-    const pos = positions.find(p => p.indice === v.indice)
-    return pos?.pruMoyen ?? null
+  // Calculate gain for display (uses PRU from ordres still open + historical)
+  // For ventes display we store basic info; gain is shown if we can compute it
+  function getGainDisplay(v) {
+    // Try to find PRU from current open orders (approximation for display)
+    const ordresDeCetIndice = ordresOuverts.filter(o => o.indice === v.indice)
+    if (ordresDeCetIndice.length > 0) {
+      const totalInvesti = ordresDeCetIndice.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+      const totalParts = ordresDeCetIndice.reduce((s, o) => s + Number(o.nb_parts), 0)
+      const pruMoyen = totalParts > 0 ? totalInvesti / totalParts : 0
+      const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
+      const cout = Number(v.nb_parts) * pruMoyen
+      const gain = produit - cout
+      const pct = cout > 0 ? (gain / cout) * 100 : null
+      return { produit, gain, pct }
+    }
+    const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
+    return { produit, gain: null, pct: null }
   }
 
   return (
     <PageWrapper>
       <div className="w-full max-w-[430px] md:max-w-content mx-auto px-5 md:px-8 pt-10 pb-6">
 
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted">Mon PEA</p>
@@ -190,11 +266,7 @@ export default function Ventes() {
               <p className="text-text-muted text-sm">Aucune vente enregistrée</p>
             </div>
           ) : ventes.map(v => {
-            const pru = ventePRU(v)
-            const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
-            const cout = pru !== null ? Number(v.nb_parts) * pru : null
-            const gain = cout !== null ? produit - cout : null
-            const pct = gain !== null && cout > 0 ? (gain / cout) * 100 : null
+            const { produit, gain, pct } = getGainDisplay(v)
             return (
               <div key={v.id} className="rounded-card p-4" style={{ backgroundColor: '#0c0c24', ...B }}>
                 <div className="flex items-center justify-between mb-3">
@@ -202,17 +274,18 @@ export default function Ventes() {
                   <span className="text-text-muted text-xs font-mono">{new Date(v.date).toLocaleDateString('fr-FR')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {[['Parts vendues', fmt(v.nb_parts, 4)], ['Prix de vente', fmt(v.prix_vente, 4) + ' €'], ['Frais', fmt(v.frais) + ' €']].map(([l, val]) => (
+                  {[['Parts vendues', fmt(v.nb_parts, 4)], ['Prix de vente', fmt(v.prix_vente, 4) + ' €'], ['Frais', fmt(v.frais) + ' €'], ['Montant récupéré', fmt(produit) + ' €']].map(([l, val]) => (
                     <div key={l}>
                       <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">{l}</p>
                       <p className="text-text-primary text-sm font-bold mt-0.5">{val}</p>
                     </div>
                   ))}
                   {gain !== null && (
-                    <div>
+                    <div className="col-span-2">
                       <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">Gain / Perte</p>
                       <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(gain) }}>
-                        {gain >= 0 ? '+' : ''}{fmt(gain)} €{pct !== null && <span className="text-xs ml-1">({pct >= 0 ? '+' : ''}{fmt(pct)} %)</span>}
+                        {gain >= 0 ? '+' : ''}{fmt(gain)} €
+                        {pct !== null && <span className="text-xs ml-1">({pct >= 0 ? '+' : ''}{fmt(pct)} %)</span>}
                       </p>
                     </div>
                   )}
@@ -242,11 +315,7 @@ export default function Ventes() {
                 </thead>
                 <tbody>
                   {ventes.map((v, i) => {
-                    const pru = ventePRU(v)
-                    const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
-                    const cout = pru !== null ? Number(v.nb_parts) * pru : null
-                    const gain = cout !== null ? produit - cout : null
-                    const pct = gain !== null && cout > 0 ? (gain / cout) * 100 : null
+                    const { produit, gain, pct } = getGainDisplay(v)
                     return (
                       <tr key={v.id} style={{ borderBottom: i < ventes.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                         <td className="px-4 py-3 text-text-muted font-mono text-xs">{new Date(v.date).toLocaleDateString('fr-FR')}</td>
@@ -271,12 +340,17 @@ export default function Ventes() {
         </div>
       </div>
 
-      {/* Bouton + mobile flottant */}
       <div className="md:hidden fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex justify-end pr-5 pointer-events-none z-40">
         <button onClick={() => setShowModal(true)} className="pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl" style={{ backgroundColor: '#3a7bd5' }}>+</button>
       </div>
 
-      {showModal && <Modal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchData() }} positions={positions} />}
+      {showModal && (
+        <Modal
+          onClose={() => setShowModal(false)}
+          onSaved={() => { setShowModal(false); fetchData() }}
+          ordresOuverts={ordresOuverts}
+        />
+      )}
     </PageWrapper>
   )
 }
