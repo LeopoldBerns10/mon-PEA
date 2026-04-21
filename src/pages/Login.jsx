@@ -9,6 +9,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [inscriptionOk, setInscriptionOk] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -35,6 +36,17 @@ export default function Login() {
       return
     }
 
+    if (mode === 'inscription') {
+      setInscriptionOk(true)
+      setTimeout(() => {
+        setInscriptionOk(false)
+        setMode('connexion')
+        setEmail('')
+        setPassword('')
+      }, 3000)
+      return
+    }
+
     navigate('/dashboard', { replace: true })
   }
 
@@ -55,7 +67,17 @@ export default function Login() {
         <p className="text-text-muted text-xs tracking-widest uppercase mt-1">Suivi de portefeuille</p>
       </div>
 
+      {/* Message post-inscription */}
+      {inscriptionOk && (
+        <div className="w-full max-w-sm bg-bg-card border border-border rounded-card p-5 text-center">
+          <p className="text-gain text-sm leading-relaxed">
+            Compte créé avec succès. En attente de validation par l'administrateur. Vous serez contacté.
+          </p>
+        </div>
+      )}
+
       {/* Formulaire */}
+      {!inscriptionOk && (
       <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <label className="text-text-muted text-[10px] uppercase tracking-[2px] font-medium">
@@ -105,6 +127,7 @@ export default function Login() {
           {mode === 'connexion' ? 'Créer un compte' : 'J\'ai déjà un compte'}
         </button>
       </form>
+      )}
     </div>
   )
 }
