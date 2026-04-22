@@ -362,9 +362,9 @@ export default function Injections() {
                             <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>{fmt(inj.montant)}</td>
                             <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)', fontSize: 12 }}>{inj.note || '—'}</td>
                             <td style={{ padding: '10px 8px' }}>
-                              <div className="flex items-center justify-end gap-2">
-                                <button onClick={() => startEditRow(inj)} title="Modifier" style={{ color: '#f0c040', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.6, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><PencilIcon /></button>
-                                <button onClick={() => deleteInjection(inj.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.6, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => startEditRow(inj)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Modifier</button>
+                                <button onClick={() => deleteInjection(inj.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Supprimer</button>
                               </div>
                             </td>
                           </tr>

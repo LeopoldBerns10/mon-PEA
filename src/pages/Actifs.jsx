@@ -181,10 +181,6 @@ function ConfirmDelete({ actif, onConfirm, onCancel }) {
 
 export default function Actifs() {
   const [actifs, setActifs] = useState([])
-  const [ordres, setOrdres] = useState([])
-  const [allOrdresData, setAllOrdresData] = useState([])
-  const [injections, setInjections] = useState([])
-  const [ventesData, setVentesData] = useState([])
   const [prices, setPrices] = useState({})
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -193,19 +189,9 @@ export default function Actifs() {
 
   async function fetchActifs() {
     setLoading(true)
-    const [{ data: actifsData }, { data: ordresData }, { data: injectionsData }, { data: ventesRaw }] = await Promise.all([
-      supabase.from('actifs').select('*').order('ticker'),
-      supabase.from('ordres').select('*').order('date', { ascending: true }),
-      supabase.from('injections').select('montant'),
-      supabase.from('ventes').select('nb_parts, prix_vente, frais'),
-    ])
+    const { data: actifsData } = await supabase.from('actifs').select('*').order('ticker')
     const list = actifsData || []
-    const allOrdres = ordresData || []
     setActifs(list)
-    setAllOrdresData(allOrdres)
-    setOrdres(allOrdres.filter(o => !o.statut || o.statut === 'ouvert'))
-    setInjections(injectionsData || [])
-    setVentesData(ventesRaw || [])
     setLoading(false)
     if (list.length > 0) {
       const p = await getPrixMultiple(list)
@@ -228,30 +214,6 @@ export default function Actifs() {
   }
 
   useEffect(() => { fetchActifs() }, [])
-
-  // Bandeau : total investi + performance globale pondérée
-  const totalInvesti = ordres.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
-  const perIndice = {}
-  ordres.forEach(o => {
-    if (!perIndice[o.indice]) perIndice[o.indice] = { invested: 0, parts: 0 }
-    perIndice[o.indice].invested += Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
-    perIndice[o.indice].parts += Number(o.nb_parts)
-  })
-  let perfNum = 0, perfDen = 0
-  Object.entries(perIndice).forEach(([indice, data]) => {
-    const pruMoyen = data.parts > 0 ? data.invested / data.parts : 0
-    const prixLive = prices[indice]
-    if (!prixLive || pruMoyen === 0) return
-    perfNum += ((prixLive - pruMoyen) / pruMoyen * 100) * data.invested
-    perfDen += data.invested
-  })
-  const perfGlobale = perfDen > 0 ? perfNum / perfDen : null
-
-  // Liquidités pour cas sans position ouverte
-  const totalInjecte = injections.reduce((s, i) => s + Number(i.montant), 0)
-  const totalDepense = allOrdresData.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
-  const totalRecupere = ventesData.reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0)
-  const liquidites = totalInjecte - totalDepense + totalRecupere
 
   return (
     <PageWrapper>
@@ -280,47 +242,6 @@ export default function Actifs() {
             </button>
           </div>
         </div>
-
-        {/* Bandeau récapitulatif sticky */}
-        {!loading && totalInjecte > 0 && (
-          <div style={{
-            background: '#0d1b3e',
-            border: '1px solid #2a4a8a',
-            borderRadius: 12,
-            padding: '16px 20px',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-            marginBottom: 16,
-            display: 'flex',
-            gap: 32,
-            alignItems: 'center',
-          }}>
-            {totalInvesti > 0 ? (
-              <>
-                <div>
-                  <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Total investi</p>
-                  <p style={{ color: '#c8e0ff', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{fmt(totalInvesti)} €</p>
-                </div>
-                {perfGlobale !== null && (
-                  <div>
-                    <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Performance globale</p>
-                    <p style={{ color: perfGlobale >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 20, fontWeight: 800, marginTop: 4 }}>
-                      {perfGlobale >= 0 ? '+' : ''}{fmt(perfGlobale)} %
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div>
-                <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Aucune position ouverte</p>
-                <p style={{ color: '#c8e0ff', fontSize: 16, fontWeight: 800, marginTop: 4 }}>
-                  Liquidités disponibles : {fmt(liquidites)} €
-                </p>
-              </div>
-            )}
-          </div>
-        )}
 
         {loading ? (
           <p className="text-text-muted text-sm">Chargement…</p>

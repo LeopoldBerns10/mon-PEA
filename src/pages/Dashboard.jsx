@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import PageWrapper from '../components/PageWrapper'
 import { getPrixMultiple } from '../services/prixLive'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 const B = { border: '1px solid rgba(255,255,255,0.12)' }
 const HERO = { background: 'linear-gradient(135deg,#0d1b3e,#0c0c24)', border: '1px solid #2a4a8a', boxShadow: '0 0 24px rgba(58,123,213,0.15)' }
@@ -41,6 +42,9 @@ export default function Dashboard() {
   const [positions, setPositions] = useState([])
   const [prixMap, setPrixMap] = useState({})
   const [loading, setLoading] = useState(true)
+  const [injRaw, setInjRaw] = useState([])
+  const [ventesRaw, setVentesRaw] = useState([])
+  const [ordresAllRaw, setOrdresAllRaw] = useState([])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
@@ -50,9 +54,9 @@ export default function Dashboard() {
     async function fetchData() {
       setLoading(true)
       const [{ data: injections }, { data: ordres }, { data: ventes }, { data: actifs }] = await Promise.all([
-        supabase.from('injections').select('montant'),
-        supabase.from('ordres').select('indice, nb_parts, pru, frais, statut'),
-        supabase.from('ventes').select('nb_parts, prix_vente, frais'),
+        supabase.from('injections').select('date, montant, type').order('date', { ascending: true }),
+        supabase.from('ordres').select('date, indice, nb_parts, pru, frais, statut').order('date', { ascending: false }),
+        supabase.from('ventes').select('date, indice, nb_parts, prix_vente, frais, gain_euros, gain_pct').order('date', { ascending: false }),
         supabase.from('actifs').select('ticker, ticker_yahoo'),
       ])
 
@@ -106,6 +110,9 @@ export default function Dashboard() {
 
       setStats({ totalInjecte, liquidites, valeurPF, gainNet, gainPct })
       setPositions(positionsArr.filter(p => p.nbParts > 0.0001))
+      setInjRaw(injections || [])
+      setVentesRaw(ventes || [])
+      setOrdresAllRaw(ordres || [])
       setLoading(false)
     }
     fetchData()
@@ -118,8 +125,67 @@ export default function Dashboard() {
 
   const prenom = user?.user_metadata?.full_name?.split(' ')[0] || user?.email || ''
   const photo = user?.user_metadata?.avatar_url
-  const gainPositif = stats?.gainNet >= 0
   const gainCol = gainColor(stats?.gainNet || 0)
+
+  const fmtM = (val, dec = 2) => Number(val || 0).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
+
+  const sparkData = injRaw.reduce((acc, inj) => {
+    const prev = acc.length > 0 ? acc[acc.length - 1].valeur : 0
+    acc.push({ date: inj.date, valeur: prev + Number(inj.montant) })
+    return acc
+  }, [])
+
+  const capitalByMonth = {}
+  injRaw.forEach(inj => {
+    const d = new Date(inj.date + 'T00:00:00')
+    const key = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}`
+    if (!capitalByMonth[key]) capitalByMonth[key] = 0
+    capitalByMonth[key] += Number(inj.montant)
+  })
+  const capitalMonthsSorted = Object.keys(capitalByMonth).sort((a, b) => {
+    const [ma, ya] = a.split('/').map(Number)
+    const [mb, yb] = b.split('/').map(Number)
+    return (ya * 12 + ma) - (yb * 12 + mb)
+  })
+  let capitalCumul = 0
+  const capitalChartData = capitalMonthsSorted.map(key => {
+    capitalCumul += capitalByMonth[key]
+    return { mois: key, valeur: Math.round(capitalCumul) }
+  })
+
+  const perfByIndice = {}
+  ventesRaw.forEach(v => {
+    if (!perfByIndice[v.indice]) perfByIndice[v.indice] = { pctSum: 0, count: 0 }
+    if (v.gain_pct != null) { perfByIndice[v.indice].pctSum += Number(v.gain_pct); perfByIndice[v.indice].count++ }
+  })
+  const perfChartData = Object.entries(perfByIndice)
+    .map(([indice, d]) => ({ indice, pct: d.count > 0 ? Math.round((d.pctSum / d.count) * 100) / 100 : 0 }))
+    .sort((a, b) => a.pct - b.pct)
+
+  const mouvements = [
+    ...ordresAllRaw.map(o => ({
+      date: o.date, type: 'ACHAT',
+      description: `${fmtM(o.nb_parts, 4)} parts ${o.indice} à ${fmtM(o.pru, 4)} €`,
+      montant: Number(o.nb_parts) * Number(o.pru) + Number(o.frais),
+    })),
+    ...injRaw.map(i => ({
+      date: i.date, type: i.type === 'dividende' ? 'DIVIDENDE' : 'INJECTION',
+      description: `Virement ${fmtM(Number(i.montant))} €`,
+      montant: Number(i.montant),
+    })),
+    ...ventesRaw.map(v => ({
+      date: v.date, type: 'VENTE',
+      description: `${fmtM(v.nb_parts, 4)} parts ${v.indice} à ${fmtM(v.prix_vente, 4)} €`,
+      montant: Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais),
+    })),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5)
+
+  const TYPE_BADGE = {
+    ACHAT: { background: 'rgba(58,123,213,0.2)', border: '1px solid #3a7bd5', color: '#3a7bd5' },
+    VENTE: { background: 'rgba(160,74,74,0.2)', border: '1px solid #a04a4a', color: '#a04a4a' },
+    INJECTION: { background: 'rgba(42,154,90,0.2)', border: '1px solid #2a9a5a', color: '#2a9a5a' },
+    DIVIDENDE: { background: 'rgba(240,192,64,0.2)', border: '1px solid #f0c040', color: '#f0c040' },
+  }
 
   return (
     <PageWrapper>
@@ -148,6 +214,20 @@ export default function Dashboard() {
           <p className="text-[32px] md:text-[40px] font-black tracking-tight text-text-primary">
             {loading ? '—' : fmt(stats?.valeurPF)}
           </p>
+          {!loading && sparkData.length > 1 && (
+            <div style={{ marginTop: 12, height: 60 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sparkData}>
+                  <Line type="monotone" dataKey="valeur" stroke="#3a7bd5" strokeWidth={2} dot={false} />
+                  <Tooltip
+                    contentStyle={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: 6, fontSize: 11 }}
+                    formatter={(val) => [fmtM(val) + ' €', 'Capital']}
+                    labelFormatter={(label) => label}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
         {/* Stats — 2 cols mobile, 3 cols desktop */}
@@ -170,6 +250,41 @@ export default function Dashboard() {
             )}
           </Card>
         </div>
+
+        {/* Graphiques */}
+        {!loading && capitalChartData.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div style={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: 12, padding: 16 }}>
+              <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted mb-4">Capital investi dans le temps</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={capitalChartData} barSize={Math.max(8, Math.min(24, Math.floor(180 / Math.max(capitalChartData.length, 1))))}>
+                  <CartesianGrid vertical={false} stroke="#1a1a3a" />
+                  <XAxis dataKey="mois" tick={{ fill: '#3a5080', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#3a5080', fontSize: 10 }} axisLine={false} tickLine={false} width={40} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+                  <Tooltip contentStyle={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: 6, fontSize: 11 }} formatter={val => [fmtM(val) + ' €', 'Capital cumulé']} />
+                  <Bar dataKey="valeur" fill="#3a7bd5" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {perfChartData.length > 0 && (
+              <div style={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: 12, padding: 16 }}>
+                <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted mb-4">Performance par actif</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={perfChartData} layout="vertical" barSize={16}>
+                    <CartesianGrid horizontal={false} stroke="#1a1a3a" />
+                    <XAxis type="number" tick={{ fill: '#3a5080', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => v + '%'} />
+                    <YAxis type="category" dataKey="indice" tick={{ fill: '#3a5080', fontSize: 10 }} axisLine={false} tickLine={false} width={50} />
+                    <Tooltip contentStyle={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: 6, fontSize: 11 }} formatter={val => [(val >= 0 ? '+' : '') + fmtM(val) + ' %', 'Gain moyen']} />
+                    <Bar dataKey="pct" radius={[0, 3, 3, 0]}>
+                      {perfChartData.map((entry, i) => <Cell key={i} fill={entry.pct >= 0 ? '#2a9a5a' : '#a04a4a'} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Positions */}
         <div>
@@ -237,6 +352,23 @@ export default function Dashboard() {
             </>
           )}
         </div>
+
+        {/* Derniers mouvements */}
+        {!loading && mouvements.length > 0 && (
+          <div className="mt-6">
+            <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted mb-3">Derniers mouvements</p>
+            <div style={{ background: '#0c0c24', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 12, overflow: 'hidden' }}>
+              {mouvements.map((m, i) => (
+                <div key={i} style={{ padding: '12px 16px', borderBottom: i < mouvements.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ ...TYPE_BADGE[m.type], borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>{m.type}</span>
+                  <span style={{ color: '#8bb8f0', fontFamily: 'monospace', fontSize: 11, whiteSpace: 'nowrap' }}>{new Date(m.date).toLocaleDateString('fr-FR')}</span>
+                  <span className="text-text-muted text-xs flex-1 truncate">{m.description}</span>
+                  <span style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap' }}>{fmtM(m.montant)} €</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </PageWrapper>
   )

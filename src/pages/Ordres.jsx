@@ -202,6 +202,8 @@ export default function Ordres() {
   const [ordres, setOrdres] = useState([])
   const [actifs, setActifs] = useState([])
   const [prixMap, setPrixMap] = useState({})
+  const [injections, setInjections] = useState([])
+  const [ventesLiq, setVentesLiq] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editRow, setEditRow] = useState(null)
@@ -209,12 +211,16 @@ export default function Ordres() {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: ordresData }, { data: actifsData }] = await Promise.all([
+    const [{ data: ordresData }, { data: actifsData }, { data: injData }, { data: ventesData }] = await Promise.all([
       supabase.from('ordres').select('*').order('date', { ascending: false }),
       supabase.from('actifs').select('*'),
+      supabase.from('injections').select('montant'),
+      supabase.from('ventes').select('nb_parts, prix_vente, frais'),
     ])
     setOrdres(ordresData || [])
     setActifs(actifsData || [])
+    setInjections(injData || [])
+    setVentesLiq(ventesData || [])
     setLoading(false)
     if (actifsData?.length > 0) {
       const p = await getPrixMultiple(actifsData)
@@ -249,6 +255,11 @@ export default function Ordres() {
   const actifsTickers = actifs.map(a => a.ticker)
   const groups = groupByYear(ordres)
 
+  const totalInjecte = injections.reduce((s, i) => s + Number(i.montant), 0)
+  const totalDepense = ordres.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+  const totalRecupere = ventesLiq.reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0)
+  const liquidites = totalInjecte - totalDepense + totalRecupere
+
   return (
     <PageWrapper>
       <div className="w-full max-w-[430px] md:max-w-content mx-auto px-5 md:px-8 pt-10 pb-6">
@@ -262,6 +273,22 @@ export default function Ordres() {
             <span className="text-lg leading-none">+</span> Ajouter un ordre
           </button>
         </div>
+
+        {!loading && totalInjecte > 0 && (
+          <div style={{
+            background: '#0d1b3e',
+            border: '1px solid #2a4a8a',
+            borderRadius: 12,
+            padding: '16px 20px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            marginBottom: 16,
+          }}>
+            <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Liquidités disponibles</p>
+            <p style={{ color: '#c8e0ff', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{fmt(liquidites)} €</p>
+          </div>
+        )}
 
         {/* Overlay ferme le menu contextuel mobile */}
         {menuOpen && <div onClick={() => setMenuOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />}
@@ -465,9 +492,9 @@ export default function Ordres() {
                               )}
                             </td>
                             <td style={{ padding: '10px 8px' }}>
-                              <div className="flex items-center justify-end gap-2">
-                                <button onClick={() => startEditRow(o)} title="Modifier" style={{ color: '#f0c040', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.6, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><PencilIcon /></button>
-                                <button onClick={() => deleteOrdre(o.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.6, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => startEditRow(o)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Modifier</button>
+                                <button onClick={() => deleteOrdre(o.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Supprimer</button>
                               </div>
                             </td>
                           </tr>
