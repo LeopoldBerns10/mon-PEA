@@ -7,6 +7,7 @@ const BADGE_VERSEMENT = { borderRadius: '6px', padding: '2px 8px', fontSize: '10
 const BADGE_DIVIDENDE = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(240,192,64,0.12)', border: '1px solid #f0c040', color: '#f0c040' }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
+const EDIT_INPUT = { borderBottom: '1px solid #3a7bd5', background: 'transparent', outline: 'none', color: '#e8eaf0', fontSize: '0.8125rem', width: '100%' }
 
 function todayFR() {
   const d = new Date()
@@ -16,6 +17,12 @@ function todayFR() {
 function parseDateFR(str) {
   const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null
+}
+
+function isoToFR(iso) {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
 }
 
 function fmt(val) {
@@ -30,7 +37,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(a) - Number(b))
+    .sort(([a], [b]) => Number(b) - Number(a))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -67,6 +74,11 @@ const TrashIcon = () => (
   </svg>
 )
 
+function TypeBadge({ type }) {
+  const isDividende = (type || 'versement') === 'dividende'
+  return <span style={isDividende ? BADGE_DIVIDENDE : BADGE_VERSEMENT}>{isDividende ? 'Dividende' : 'Versement'}</span>
+}
+
 function Modal({ onClose, onSaved }) {
   const [date, setDate] = useState(todayFR())
   const [montant, setMontant] = useState('')
@@ -100,15 +112,7 @@ function Modal({ onClose, onSaved }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Date</label>
-            <input
-              type="text"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              placeholder="JJ/MM/AAAA"
-              required
-              className={INPUT}
-              style={{ ...B, backgroundColor: '#07071a' }}
-            />
+            <input type="text" value={date} onChange={e => setDate(e.target.value)} placeholder="JJ/MM/AAAA" required className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Montant (€)</label>
@@ -142,15 +146,31 @@ export default function Injections() {
   const [injections, setInjections] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editRow, setEditRow] = useState(null)
 
   async function fetchInjections() {
     setLoading(true)
-    const { data } = await supabase.from('injections').select('*').order('date', { ascending: true })
+    const { data } = await supabase.from('injections').select('*').order('date', { ascending: false })
     setInjections(data || [])
     setLoading(false)
   }
 
   useEffect(() => { fetchInjections() }, [])
+
+  function startEditRow(inj) {
+    setEditRow({ id: inj.id, date: isoToFR(inj.date), montant: String(inj.montant), note: inj.note || '', type: inj.type || 'versement' })
+  }
+
+  async function saveEditRow() {
+    if (!editRow) return
+    const isoDate = parseDateFR(editRow.date)
+    if (!isoDate) { alert('Date invalide — format JJ/MM/AAAA'); return }
+    await supabase.from('injections').update({
+      date: isoDate, montant: Number(editRow.montant), note: editRow.note.trim() || null, type: editRow.type,
+    }).eq('id', editRow.id)
+    setEditRow(null)
+    fetchInjections()
+  }
 
   async function deleteInjection(id) {
     if (!window.confirm('Supprimer cette ligne ?')) return
@@ -165,7 +185,6 @@ export default function Injections() {
     <PageWrapper>
       <div className="w-full max-w-[430px] md:max-w-content mx-auto px-5 md:px-8 pt-10 pb-6">
 
-        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted">Mon PEA</p>
@@ -176,7 +195,6 @@ export default function Injections() {
           </button>
         </div>
 
-        {/* Carte total — desktop */}
         {!loading && injections.length > 0 && (
           <div className="hidden md:flex items-center justify-between rounded-card px-5 py-4 mb-6" style={{ backgroundColor: '#0c0c24', ...B }}>
             <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted">Total injecté</p>
@@ -197,28 +215,55 @@ export default function Injections() {
               {groups.map(({ year, items }) => (
                 <div key={year}>
                   <YearSepCard year={year} />
-                  {items.map(inj => (
-                    <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span style={(inj.type || 'versement') === 'dividende' ? BADGE_DIVIDENDE : BADGE_VERSEMENT}>
-                          {(inj.type || 'versement') === 'dividende' ? 'Dividende' : 'Versement'}
-                        </span>
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</span>
-                          <button
-                            onClick={() => deleteInjection(inj.id)}
-                            title="Supprimer"
-                            style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }}
-                            className="hover:opacity-100 transition-opacity"
-                          >
-                            <TrashIcon />
-                          </button>
+                  {items.map(inj => {
+                    const isEditing = editRow?.id === inj.id
+                    if (isEditing) {
+                      return (
+                        <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', border: '1px solid #3a7bd5' }}>
+                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-3">Modifier</p>
+                          <div className="flex flex-col gap-3">
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Date</p>
+                              <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT }} />
+                            </div>
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Montant (€)</p>
+                              <input type="number" value={editRow.montant} onChange={e => setEditRow({ ...editRow, montant: e.target.value })} style={{ ...EDIT_INPUT }} />
+                            </div>
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Note</p>
+                              <input value={editRow.note} onChange={e => setEditRow({ ...editRow, note: e.target.value })} style={{ ...EDIT_INPUT }} />
+                            </div>
+                            <div>
+                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Type</p>
+                              <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, paddingRight: 4 }}>
+                                <option value="versement">Versement</option>
+                                <option value="dividende">Dividende</option>
+                              </select>
+                            </div>
+                            <div className="flex gap-2 mt-1">
+                              <button onClick={saveEditRow} className="flex-1 rounded-input py-2 text-sm font-bold text-white" style={{ backgroundColor: '#2a9a5a' }}>✓ Sauvegarder</button>
+                              <button onClick={() => setEditRow(null)} className="flex-1 rounded-input py-2 text-sm font-bold" style={{ ...B, color: '#a04a4a', backgroundColor: 'transparent' }}>✗ Annuler</button>
+                            </div>
+                          </div>
                         </div>
+                      )
+                    }
+                    return (
+                      <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <TypeBadge type={inj.type} />
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</span>
+                            <button onClick={() => startEditRow(inj)} title="Modifier" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, opacity: 0.6 }} className="hover:opacity-100 transition-opacity">✏️</button>
+                            <button onClick={() => deleteInjection(inj.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                          </div>
+                        </div>
+                        <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
+                        {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
                       </div>
-                      <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
-                      {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ))}
               <div className="rounded-card px-4 py-3 flex items-center justify-between mt-1" style={{ backgroundColor: '#0c0c24', ...B }}>
@@ -251,28 +296,50 @@ export default function Injections() {
                   {groups.map(({ year, items }) => (
                     <>
                       <YearSepRow key={`sep-${year}`} colSpan={5} year={year} />
-                      {items.map((inj, i) => (
-                        <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                          <td className="px-5 py-3 font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
-                          <td className="px-5 py-3">
-                            <span style={(inj.type || 'versement') === 'dividende' ? BADGE_DIVIDENDE : BADGE_VERSEMENT}>
-                              {(inj.type || 'versement') === 'dividende' ? 'Dividende' : 'Versement'}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 text-text-primary font-bold">{fmt(inj.montant)}</td>
-                          <td className="px-5 py-3 text-text-muted text-xs">{inj.note || '—'}</td>
-                          <td className="px-3 py-3 text-right">
-                            <button
-                              onClick={() => deleteInjection(inj.id)}
-                              title="Supprimer"
-                              style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }}
-                              className="hover:opacity-100 transition-opacity"
-                            >
-                              <TrashIcon />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {items.map((inj, i) => {
+                        const isEditing = editRow?.id === inj.id
+                        if (isEditing) {
+                          return (
+                            <tr key={inj.id} style={{ backgroundColor: 'rgba(58,123,213,0.07)', borderBottom: '1px solid rgba(58,123,213,0.2)' }}>
+                              <td className="px-5 py-2">
+                                <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT, minWidth: 80 }} />
+                              </td>
+                              <td className="px-5 py-2">
+                                <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 90 }}>
+                                  <option value="versement">Versement</option>
+                                  <option value="dividende">Dividende</option>
+                                </select>
+                              </td>
+                              <td className="px-5 py-2">
+                                <input type="number" value={editRow.montant} onChange={e => setEditRow({ ...editRow, montant: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 80 }} />
+                              </td>
+                              <td className="px-5 py-2">
+                                <input value={editRow.note} onChange={e => setEditRow({ ...editRow, note: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 100 }} />
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex items-center gap-1 justify-end">
+                                  <button onClick={saveEditRow} style={{ background: '#2a9a5a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✓</button>
+                                  <button onClick={() => setEditRow(null)} style={{ background: '#a04a4a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✗</button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        }
+                        return (
+                          <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                            <td className="px-5 py-3 font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
+                            <td className="px-5 py-3"><TypeBadge type={inj.type} /></td>
+                            <td className="px-5 py-3 text-text-primary font-bold">{fmt(inj.montant)}</td>
+                            <td className="px-5 py-3 text-text-muted text-xs">{inj.note || '—'}</td>
+                            <td className="px-3 py-3">
+                              <div className="flex items-center justify-end gap-2">
+                                <button onClick={() => startEditRow(inj)} title="Modifier" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontSize: 13, opacity: 0.5 }} className="hover:opacity-100 transition-opacity">✏️</button>
+                                <button onClick={() => deleteInjection(inj.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </>
                   ))}
                 </tbody>
@@ -282,7 +349,6 @@ export default function Injections() {
         </div>
       </div>
 
-      {/* Bouton + mobile flottant */}
       <div className="md:hidden fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-[430px] flex justify-end pr-5 pointer-events-none z-40">
         <button onClick={() => setShowModal(true)} className="pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl" style={{ backgroundColor: '#3a7bd5' }}>+</button>
       </div>
