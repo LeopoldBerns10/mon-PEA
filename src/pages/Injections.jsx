@@ -6,14 +6,67 @@ const B = { border: '1px solid rgba(255,255,255,0.12)' }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 
-const today = () => new Date().toISOString().split('T')[0]
+function todayFR() {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
+
+function parseDateFR(str) {
+  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null
+}
 
 function fmt(val) {
   return Number(val || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
 }
 
+function groupByYear(items) {
+  const groups = {}
+  items.forEach(item => {
+    const year = new Date(item.date + 'T00:00:00').getFullYear()
+    if (!groups[year]) groups[year] = []
+    groups[year].push(item)
+  })
+  return Object.entries(groups)
+    .sort(([a], [b]) => Number(b) - Number(a))
+    .map(([year, grp]) => ({ year: Number(year), items: grp }))
+}
+
+function YearSepRow({ colSpan, year }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ padding: '10px 20px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+          <span style={{ color: '#3a5080', fontSize: 10, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>{year}</span>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function YearSepCard({ year }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0 2px' }}>
+      <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+      <span style={{ color: '#3a5080', fontSize: 10, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>{year}</span>
+      <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+    </div>
+  )
+}
+
+const TrashIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14H6L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4h6v2" />
+  </svg>
+)
+
 function Modal({ onClose, onSaved }) {
-  const [date, setDate] = useState(today())
+  const [date, setDate] = useState(todayFR())
   const [montant, setMontant] = useState('')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,10 +75,12 @@ function Modal({ onClose, onSaved }) {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+    const isoDate = parseDateFR(date)
+    if (!isoDate) { setError('Date invalide — format JJ/MM/AAAA'); return }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { error: err } = await supabase.from('injections').insert({
-      user_id: user.id, date, montant: Number(montant), note: note.trim() || null,
+      user_id: user.id, date: isoDate, montant: Number(montant), note: note.trim() || null,
     })
     setLoading(false)
     if (err) { setError(err.message); return }
@@ -42,7 +97,15 @@ function Modal({ onClose, onSaved }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} required className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+            <input
+              type="text"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              placeholder="JJ/MM/AAAA"
+              required
+              className={INPUT}
+              style={{ ...B, backgroundColor: '#07071a' }}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Montant (€)</label>
@@ -79,7 +142,14 @@ export default function Injections() {
 
   useEffect(() => { fetchInjections() }, [])
 
+  async function deleteInjection(id) {
+    if (!window.confirm('Supprimer cette ligne ?')) return
+    await supabase.from('injections').delete().eq('id', id)
+    fetchInjections()
+  }
+
   const total = injections.reduce((s, i) => s + Number(i.montant), 0)
+  const groups = groupByYear(injections)
 
   return (
     <PageWrapper>
@@ -96,7 +166,7 @@ export default function Injections() {
           </button>
         </div>
 
-        {/* Carte total — desktop en haut, mobile en bas de liste */}
+        {/* Carte total — desktop */}
         {!loading && injections.length > 0 && (
           <div className="hidden md:flex items-center justify-between rounded-card px-5 py-4 mb-6" style={{ backgroundColor: '#0c0c24', ...B }}>
             <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted">Total injecté</p>
@@ -114,13 +184,28 @@ export default function Injections() {
             </div>
           ) : (
             <>
-              {injections.map(inj => (
-                <div key={inj.id} className="rounded-card px-4 py-3 flex items-center justify-between" style={{ backgroundColor: '#0c0c24', ...B }}>
-                  <div>
-                    <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
-                    {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
-                  </div>
-                  <p className="text-text-muted text-xs font-mono">{new Date(inj.date).toLocaleDateString('fr-FR')}</p>
+              {groups.map(({ year, items }) => (
+                <div key={year}>
+                  <YearSepCard year={year} />
+                  {items.map(inj => (
+                    <div key={inj.id} className="rounded-card px-4 py-3 flex items-center justify-between mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
+                      <div>
+                        <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
+                        {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-text-muted text-xs font-mono">{new Date(inj.date).toLocaleDateString('fr-FR')}</p>
+                        <button
+                          onClick={() => deleteInjection(inj.id)}
+                          title="Supprimer"
+                          style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }}
+                          className="hover:opacity-100 transition-opacity"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
               <div className="rounded-card px-4 py-3 flex items-center justify-between mt-1" style={{ backgroundColor: '#0c0c24', ...B }}>
@@ -144,18 +229,33 @@ export default function Injections() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Date', 'Montant', 'Note'].map(h => (
+                    {['Date', 'Montant', 'Note', ''].map(h => (
                       <th key={h} className="text-left px-5 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {injections.map((inj, i) => (
-                    <tr key={inj.id} style={{ borderBottom: i < injections.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                      <td className="px-5 py-3 text-text-muted font-mono text-xs">{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
-                      <td className="px-5 py-3 text-text-primary font-bold">{fmt(inj.montant)}</td>
-                      <td className="px-5 py-3 text-text-muted text-xs">{inj.note || '—'}</td>
-                    </tr>
+                  {groups.map(({ year, items }) => (
+                    <>
+                      <YearSepRow key={`sep-${year}`} colSpan={4} year={year} />
+                      {items.map((inj, i) => (
+                        <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                          <td className="px-5 py-3 text-text-muted font-mono text-xs">{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
+                          <td className="px-5 py-3 text-text-primary font-bold">{fmt(inj.montant)}</td>
+                          <td className="px-5 py-3 text-text-muted text-xs">{inj.note || '—'}</td>
+                          <td className="px-3 py-3 text-right">
+                            <button
+                              onClick={() => deleteInjection(inj.id)}
+                              title="Supprimer"
+                              style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }}
+                              className="hover:opacity-100 transition-opacity"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
                   ))}
                 </tbody>
               </table>

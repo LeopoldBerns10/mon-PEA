@@ -9,7 +9,15 @@ const BADGE_VENDU = { background: '#2a0a0a', border: '1px solid #a04a4a', color:
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 
-const today = () => new Date().toISOString().split('T')[0]
+function todayFR() {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
+
+function parseDateFR(str) {
+  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null
+}
 
 function fmt(val, dec = 2) {
   return Number(val || 0).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
@@ -17,6 +25,51 @@ function fmt(val, dec = 2) {
 
 function gainColor(val) { return val >= 0 ? '#2a9a5a' : '#a04a4a' }
 function isOuvert(o) { return !o.statut || o.statut === 'ouvert' }
+
+function groupByYear(items) {
+  const groups = {}
+  items.forEach(item => {
+    const year = new Date(item.date + 'T00:00:00').getFullYear()
+    if (!groups[year]) groups[year] = []
+    groups[year].push(item)
+  })
+  return Object.entries(groups)
+    .sort(([a], [b]) => Number(b) - Number(a))
+    .map(([year, grp]) => ({ year: Number(year), items: grp }))
+}
+
+function YearSepRow({ colSpan, year }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ padding: '10px 20px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+          <span style={{ color: '#3a5080', fontSize: 10, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>{year}</span>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function YearSepCard({ year }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0 2px' }}>
+      <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+      <span style={{ color: '#3a5080', fontSize: 10, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>{year}</span>
+      <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+    </div>
+  )
+}
+
+const TrashIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14H6L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4h6v2" />
+  </svg>
+)
 
 function EditCell({ ordre, field, display, editing, editValue, onStart, onChange, onCommit }) {
   const isEditing = editing?.id === ordre.id && editing?.field === field
@@ -46,8 +99,42 @@ function EditCell({ ordre, field, display, editing, editValue, onStart, onChange
   )
 }
 
+function EditCellIndice({ ordre, editing, editValue, onStart, onChange, onCommit, actifsTickers }) {
+  const isEditing = editing?.id === ordre.id && editing?.field === 'indice'
+  const editable = isOuvert(ordre)
+
+  if (isEditing) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <input
+          autoFocus
+          list="ordres-actifs-list"
+          value={editValue}
+          onChange={e => onChange(e.target.value)}
+          onBlur={() => onCommit(ordre)}
+          onKeyDown={e => { if (e.key === 'Enter') onCommit(ordre) }}
+          className="bg-transparent text-text-primary outline-none text-sm uppercase"
+          style={{ borderBottom: '1px solid #3a7bd5', minWidth: 80 }}
+        />
+        <datalist id="ordres-actifs-list">
+          {actifsTickers.map(t => <option key={t} value={t} />)}
+        </datalist>
+      </span>
+    )
+  }
+  return (
+    <span
+      onClick={() => editable && onStart(ordre, 'indice')}
+      className={editable ? 'cursor-pointer hover:opacity-70 transition-opacity' : ''}
+      title={editable ? 'Cliquer pour modifier' : ''}
+    >
+      <span style={BADGE}>{ordre.indice}</span>
+    </span>
+  )
+}
+
 function Modal({ onClose, onSaved, actifs, prixMap }) {
-  const [date, setDate] = useState(today())
+  const [date, setDate] = useState(todayFR())
   const [actifId, setActifId] = useState(actifs[0]?.id || '')
   const [nbParts, setNbParts] = useState('')
   const [pru, setPru] = useState('')
@@ -80,11 +167,13 @@ function Modal({ onClose, onSaved, actifs, prixMap }) {
     e.preventDefault()
     setError('')
     if (!actifSel) { setError('Sélectionnez un actif'); return }
+    const isoDate = parseDateFR(date)
+    if (!isoDate) { setError('Date invalide — format JJ/MM/AAAA'); return }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { error: err } = await supabase.from('ordres').insert({
       user_id: user.id,
-      date,
+      date: isoDate,
       indice: actifSel.ticker,
       nb_parts: Number(nbParts),
       pru: Number(pru),
@@ -106,7 +195,15 @@ function Modal({ onClose, onSaved, actifs, prixMap }) {
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className={LABEL}>Date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} required className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+            <input
+              type="text"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              placeholder="JJ/MM/AAAA"
+              required
+              className={INPUT}
+              style={{ ...B, backgroundColor: '#07071a' }}
+            />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -215,6 +312,15 @@ export default function Ordres() {
     fetchAll()
   }
 
+  async function deleteOrdre(id) {
+    if (!window.confirm('Supprimer cette ligne ?')) return
+    await supabase.from('ordres').delete().eq('id', id)
+    fetchAll()
+  }
+
+  const actifsTickers = actifs.map(a => a.ticker)
+  const groups = groupByYear(ordres)
+
   return (
     <PageWrapper>
       <div className="w-full max-w-[430px] md:max-w-content mx-auto px-5 md:px-8 pt-10 pb-6">
@@ -237,49 +343,64 @@ export default function Ordres() {
             <div className="rounded-card p-5" style={{ backgroundColor: '#0c0c24', ...B }}>
               <p className="text-text-muted text-sm">Aucun ordre enregistré</p>
             </div>
-          ) : ordres.map(o => {
-            const vendu = !isOuvert(o)
-            const prixLive = prixMap[o.indice]
-            const prixTTC = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
-            const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
-            const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
-            return (
-              <div key={o.id} className="rounded-card p-4" style={{ backgroundColor: '#0c0c24', ...B, opacity: vendu ? 0.6 : 1 }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span style={BADGE}>{o.indice}</span>
-                    {vendu && <span style={BADGE_VENDU}>VENDU</span>}
+          ) : groups.map(({ year, items }) => (
+            <div key={year}>
+              <YearSepCard year={year} />
+              {items.map(o => {
+                const vendu = !isOuvert(o)
+                const prixLive = prixMap[o.indice]
+                const prixTTC = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
+                const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
+                const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
+                return (
+                  <div key={o.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', ...B, opacity: vendu ? 0.6 : 1 }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span style={BADGE}>{o.indice}</span>
+                        {vendu && <span style={BADGE_VENDU}>VENDU</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-text-muted text-xs font-mono">{new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                        <button
+                          onClick={() => deleteOrdre(o.id)}
+                          title="Supprimer"
+                          style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }}
+                          className="hover:opacity-100 transition-opacity"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[['Parts', fmt(o.nb_parts, 4)], ['PRU', fmt(o.pru, 4) + ' €'], ['Frais', fmt(o.frais) + ' €'], ['Prix TTC', fmt(prixTTC) + ' €']].map(([l, v]) => (
+                        <div key={l}>
+                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">{l}</p>
+                          <p className="text-text-primary text-sm font-bold mt-0.5">{v}</p>
+                        </div>
+                      ))}
+                      {!vendu && pctBenef !== null && (
+                        <div className="col-span-2">
+                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">Bénéfice live</p>
+                          <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(pctBenef) }}>
+                            {pctBenef >= 0 ? '+' : ''}{fmt(pctBenef)} % · {gainEuros >= 0 ? '+' : ''}{fmt(gainEuros)} €
+                          </p>
+                        </div>
+                      )}
+                      {vendu && o.pct_realise != null && (
+                        <div className="col-span-2">
+                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">% Réalisé</p>
+                          <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(o.pct_realise) }}>
+                            {o.pct_realise >= 0 ? '+' : ''}{fmt(o.pct_realise)} %
+                            {o.prix_vente_reel ? ` · ${fmt(o.prix_vente_reel)} €` : ''}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-text-muted text-xs font-mono">{new Date(o.date).toLocaleDateString('fr-FR')}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[['Parts', fmt(o.nb_parts, 4)], ['PRU', fmt(o.pru, 4) + ' €'], ['Frais', fmt(o.frais) + ' €'], ['Prix TTC', fmt(prixTTC) + ' €']].map(([l, v]) => (
-                    <div key={l}>
-                      <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">{l}</p>
-                      <p className="text-text-primary text-sm font-bold mt-0.5">{v}</p>
-                    </div>
-                  ))}
-                  {!vendu && pctBenef !== null && (
-                    <div className="col-span-2">
-                      <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">Bénéfice live</p>
-                      <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(pctBenef) }}>
-                        {pctBenef >= 0 ? '+' : ''}{fmt(pctBenef)} % · {gainEuros >= 0 ? '+' : ''}{fmt(gainEuros)} €
-                      </p>
-                    </div>
-                  )}
-                  {vendu && o.pct_realise != null && (
-                    <div className="col-span-2">
-                      <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">% Réalisé</p>
-                      <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(o.pct_realise) }}>
-                        {o.pct_realise >= 0 ? '+' : ''}{fmt(o.pct_realise)} %
-                        {o.prix_vente_reel ? ` · ${fmt(o.prix_vente_reel)} €` : ''}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+          ))}
         </div>
 
         {/* Desktop : tableau */}
@@ -295,82 +416,102 @@ export default function Ordres() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Date', 'Indice', 'Parts', 'PRU', 'Frais', 'Prix TTC', 'Bénéf / Réalisé'].map(h => (
+                    {['Date', 'Indice', 'Parts', 'PRU', 'Frais', 'Prix TTC', 'Bénéf / Réalisé', ''].map(h => (
                       <th key={h} className="text-left px-5 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ordres.map((o, i) => {
-                    const vendu = !isOuvert(o)
-                    const prixLive = prixMap[o.indice]
-                    const prixTTC = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
-                    const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
-                    const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
-                    return (
-                      <tr
-                        key={o.id}
-                        style={{
-                          borderBottom: i < ordres.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-                          opacity: vendu ? 0.6 : 1,
-                        }}
-                      >
-                        <td className="px-5 py-3">
-                          <EditCell
-                            ordre={o} field="date"
-                            display={<span className="text-text-muted font-mono text-xs">{new Date(o.date).toLocaleDateString('fr-FR')}</span>}
-                            editing={editing} editValue={editValue}
-                            onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
-                          />
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-2">
-                            <span style={BADGE}>{o.indice}</span>
-                            {vendu && <span style={BADGE_VENDU}>VENDU</span>}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3">
-                          <EditCell
-                            ordre={o} field="nb_parts"
-                            display={<span className="text-text-primary font-medium">{fmt(o.nb_parts, 4)}</span>}
-                            editing={editing} editValue={editValue}
-                            onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
-                          />
-                        </td>
-                        <td className="px-5 py-3">
-                          <EditCell
-                            ordre={o} field="pru"
-                            display={<span className="text-text-primary font-medium">{fmt(o.pru, 4)} €</span>}
-                            editing={editing} editValue={editValue}
-                            onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
-                          />
-                        </td>
-                        <td className="px-5 py-3">
-                          <EditCell
-                            ordre={o} field="frais"
-                            display={<span className="text-text-muted">{fmt(o.frais)} €</span>}
-                            editing={editing} editValue={editValue}
-                            onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
-                          />
-                        </td>
-                        <td className="px-5 py-3 text-text-primary font-bold">{fmt(prixTTC)} €</td>
-                        <td className="px-5 py-3 font-bold">
-                          {!vendu && pctBenef !== null ? (
-                            <span style={{ color: gainColor(pctBenef) }}>
-                              {pctBenef >= 0 ? '+' : ''}{fmt(pctBenef)} %
-                              {gainEuros !== null && <span className="text-xs ml-1 opacity-70">· {gainEuros >= 0 ? '+' : ''}{fmt(gainEuros)} €</span>}
-                            </span>
-                          ) : vendu && o.pct_realise != null ? (
-                            <span style={{ color: gainColor(o.pct_realise) }}>
-                              {o.pct_realise >= 0 ? '+' : ''}{fmt(o.pct_realise)} %
-                            </span>
-                          ) : (
-                            <span style={{ color: '#3a5080' }}>—</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {groups.map(({ year, items }) => (
+                    <>
+                      <YearSepRow key={`sep-${year}`} colSpan={8} year={year} />
+                      {items.map((o, i) => {
+                        const vendu = !isOuvert(o)
+                        const prixLive = prixMap[o.indice]
+                        const prixTTC = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
+                        const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
+                        const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
+                        return (
+                          <tr
+                            key={o.id}
+                            style={{
+                              borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                              opacity: vendu ? 0.6 : 1,
+                            }}
+                          >
+                            <td className="px-5 py-3">
+                              <EditCell
+                                ordre={o} field="date"
+                                display={<span className="text-text-muted font-mono text-xs">{new Date(o.date).toLocaleDateString('fr-FR')}</span>}
+                                editing={editing} editValue={editValue}
+                                onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
+                              />
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-2">
+                                <EditCellIndice
+                                  ordre={o}
+                                  editing={editing} editValue={editValue}
+                                  onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
+                                  actifsTickers={actifsTickers}
+                                />
+                                {vendu && <span style={BADGE_VENDU}>VENDU</span>}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3">
+                              <EditCell
+                                ordre={o} field="nb_parts"
+                                display={<span className="text-text-primary font-medium">{fmt(o.nb_parts, 4)}</span>}
+                                editing={editing} editValue={editValue}
+                                onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
+                              />
+                            </td>
+                            <td className="px-5 py-3">
+                              <EditCell
+                                ordre={o} field="pru"
+                                display={<span className="text-text-primary font-medium">{fmt(o.pru, 4)} €</span>}
+                                editing={editing} editValue={editValue}
+                                onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
+                              />
+                            </td>
+                            <td className="px-5 py-3">
+                              <EditCell
+                                ordre={o} field="frais"
+                                display={<span className="text-text-muted">{fmt(o.frais)} €</span>}
+                                editing={editing} editValue={editValue}
+                                onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
+                              />
+                            </td>
+                            <td className="px-5 py-3 text-text-primary font-bold">{fmt(prixTTC)} €</td>
+                            <td className="px-5 py-3 font-bold">
+                              {!vendu && pctBenef !== null ? (
+                                <span style={{ color: gainColor(pctBenef) }}>
+                                  {pctBenef >= 0 ? '+' : ''}{fmt(pctBenef)} %
+                                  {gainEuros !== null && <span className="text-xs ml-1 opacity-70">· {gainEuros >= 0 ? '+' : ''}{fmt(gainEuros)} €</span>}
+                                </span>
+                              ) : vendu && o.pct_realise != null ? (
+                                <span style={{ color: gainColor(o.pct_realise) }}>
+                                  {o.pct_realise >= 0 ? '+' : ''}{fmt(o.pct_realise)} %
+                                </span>
+                              ) : (
+                                <span style={{ color: '#3a5080' }}>—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <button
+                                onClick={() => deleteOrdre(o.id)}
+                                title="Supprimer"
+                                style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }}
+                                className="hover:opacity-100 transition-opacity"
+                              >
+                                <TrashIcon />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </>
+                  ))}
                 </tbody>
               </table>
             </div>

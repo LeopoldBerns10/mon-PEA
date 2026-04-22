@@ -7,7 +7,15 @@ const BADGE = { background: '#0d2040', border: '1px solid #1e3a6e', color: '#f0c
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 
-const today = () => new Date().toISOString().split('T')[0]
+function todayFR() {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
+
+function parseDateFR(str) {
+  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null
+}
 
 function fmt(val, dec = 2) {
   return Number(val || 0).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
@@ -16,8 +24,86 @@ function fmt(val, dec = 2) {
 function gainColor(val) { return val >= 0 ? '#2a9a5a' : '#a04a4a' }
 function isOuvert(o) { return !o.statut || o.statut === 'ouvert' }
 
+function groupByYear(items) {
+  const groups = {}
+  items.forEach(item => {
+    const year = new Date(item.date + 'T00:00:00').getFullYear()
+    if (!groups[year]) groups[year] = []
+    groups[year].push(item)
+  })
+  return Object.entries(groups)
+    .sort(([a], [b]) => Number(b) - Number(a))
+    .map(([year, grp]) => ({ year: Number(year), items: grp }))
+}
+
+function YearSepRow({ colSpan, year }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ padding: '10px 20px 4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+          <span style={{ color: '#3a5080', fontSize: 10, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>{year}</span>
+          <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function YearSepCard({ year }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '6px 0 2px' }}>
+      <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+      <span style={{ color: '#3a5080', fontSize: 10, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '2px' }}>{year}</span>
+      <div style={{ flex: 1, height: 1, backgroundColor: '#1a1a3a' }} />
+    </div>
+  )
+}
+
+const TrashIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14H6L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4h6v2" />
+  </svg>
+)
+
+function EditCellIndice({ vente, editingId, editValue, onStart, onChange, onCommit, actifsTickers }) {
+  const isEditing = editingId === vente.id
+
+  if (isEditing) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <input
+          autoFocus
+          list="ventes-actifs-list"
+          value={editValue}
+          onChange={e => onChange(e.target.value)}
+          onBlur={() => onCommit(vente)}
+          onKeyDown={e => { if (e.key === 'Enter') onCommit(vente) }}
+          className="bg-transparent text-text-primary outline-none text-sm uppercase"
+          style={{ borderBottom: '1px solid #3a7bd5', minWidth: 80 }}
+        />
+        <datalist id="ventes-actifs-list">
+          {actifsTickers.map(t => <option key={t} value={t} />)}
+        </datalist>
+      </span>
+    )
+  }
+  return (
+    <span
+      onClick={() => onStart(vente)}
+      className="cursor-pointer hover:opacity-70 transition-opacity"
+      title="Cliquer pour modifier"
+    >
+      <span style={BADGE}>{vente.indice}</span>
+    </span>
+  )
+}
+
 function Modal({ onClose, onSaved, ordresOuverts }) {
-  const [date, setDate] = useState(today())
+  const [date, setDate] = useState(todayFR())
   const [indice, setIndice] = useState('')
   const [nbParts, setNbParts] = useState('')
   const [prixVente, setPrixVente] = useState('')
@@ -25,7 +111,6 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Build positions from open orders
   const positionsMap = {}
   ordresOuverts.forEach(o => {
     if (!positionsMap[o.indice]) positionsMap[o.indice] = { parts: 0, ordres: [] }
@@ -42,7 +127,6 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
     if (positions.length > 0 && !indice) setIndice(positions[0].indice)
   }, [positions.length])
 
-  // Calculate PRU moyen pondéré of all open orders for selected indice
   const ordresDeLIndice = positionSel?.ordres || []
   const totalInvesti = ordresDeLIndice.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
   const totalParts = ordresDeLIndice.reduce((s, o) => s + Number(o.nb_parts), 0)
@@ -61,10 +145,11 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
       setError(`Maximum ${fmt(positionSel.parts, 4)} parts disponibles`)
       return
     }
+    const isoDate = parseDateFR(date)
+    if (!isoDate) { setError('Date invalide — format JJ/MM/AAAA'); return }
 
     setLoading(true)
     try {
-      // FIFO: mark orders as vendu (oldest first)
       const ordresFIFO = [...ordresDeLIndice].sort((a, b) => new Date(a.date) - new Date(b.date))
       let partsRestantes = Number(nbParts)
 
@@ -72,7 +157,6 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
         if (partsRestantes <= 0.0001) break
         const partsOrdre = Number(ordre.nb_parts)
         if (partsOrdre <= partsRestantes + 0.0001) {
-          // Full order consumed → mark as vendu with per-order pct_realise
           const pctOrdre = Number(ordre.pru) > 0
             ? (Number(prixVente) - Number(ordre.pru)) / Number(ordre.pru) * 100
             : null
@@ -83,7 +167,6 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
           }).eq('id', ordre.id)
           partsRestantes -= partsOrdre
         } else {
-          // Partial: reduce nb_parts of this order
           await supabase.from('ordres').update({
             nb_parts: partsOrdre - partsRestantes,
           }).eq('id', ordre.id)
@@ -91,11 +174,10 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
         }
       }
 
-      // Insert vente with stored gain
       const { data: { user } } = await supabase.auth.getUser()
       const { error: err } = await supabase.from('ventes').insert({
         user_id: user.id,
-        date,
+        date: isoDate,
         indice,
         nb_parts: Number(nbParts),
         prix_vente: Number(prixVente),
@@ -125,7 +207,15 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <label className={LABEL}>Date</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} required className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+              <input
+                type="text"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                placeholder="JJ/MM/AAAA"
+                required
+                className={INPUT}
+                style={{ ...B, backgroundColor: '#07071a' }}
+              />
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -212,22 +302,45 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
 
 export default function Ventes() {
   const [ventes, setVentes] = useState([])
+  const [actifs, setActifs] = useState([])
   const [ordresOuverts, setOrdresOuverts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editValue, setEditValue] = useState('')
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: ventesData }, { data: ordresData }] = await Promise.all([
+    const [{ data: ventesData }, { data: ordresData }, { data: actifsData }] = await Promise.all([
       supabase.from('ventes').select('*').order('date', { ascending: false }),
       supabase.from('ordres').select('*').order('date', { ascending: true }),
+      supabase.from('actifs').select('*'),
     ])
     setVentes(ventesData || [])
     setOrdresOuverts((ordresData || []).filter(isOuvert))
+    setActifs(actifsData || [])
     setLoading(false)
   }
 
   useEffect(() => { fetchData() }, [])
+
+  function startEditIndice(vente) {
+    setEditingId(vente.id)
+    setEditValue(vente.indice)
+  }
+
+  async function commitEditIndice(vente) {
+    if (!editingId) return
+    await supabase.from('ventes').update({ indice: editValue }).eq('id', vente.id)
+    setEditingId(null)
+    fetchData()
+  }
+
+  async function deleteVente(id) {
+    if (!window.confirm('Supprimer cette ligne ?')) return
+    await supabase.from('ventes').delete().eq('id', id)
+    fetchData()
+  }
 
   function getGainDisplay(v) {
     const produit = Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais)
@@ -236,6 +349,9 @@ export default function Ventes() {
     }
     return { produit, gain: null, pct: null }
   }
+
+  const actifsTickers = actifs.map(a => a.ticker)
+  const groups = groupByYear(ventes)
 
   return (
     <PageWrapper>
@@ -259,34 +375,49 @@ export default function Ventes() {
             <div className="rounded-card p-5" style={{ backgroundColor: '#0c0c24', ...B }}>
               <p className="text-text-muted text-sm">Aucune vente enregistrée</p>
             </div>
-          ) : ventes.map(v => {
-            const { produit, gain, pct } = getGainDisplay(v)
-            return (
-              <div key={v.id} className="rounded-card p-4" style={{ backgroundColor: '#0c0c24', ...B }}>
-                <div className="flex items-center justify-between mb-3">
-                  <span style={BADGE}>{v.indice}</span>
-                  <span className="text-text-muted text-xs font-mono">{new Date(v.date).toLocaleDateString('fr-FR')}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {[['Parts vendues', fmt(v.nb_parts, 4)], ['Prix de vente', fmt(v.prix_vente, 4) + ' €'], ['Frais', fmt(v.frais) + ' €'], ['Montant récupéré', fmt(produit) + ' €']].map(([l, val]) => (
-                    <div key={l}>
-                      <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">{l}</p>
-                      <p className="text-text-primary text-sm font-bold mt-0.5">{val}</p>
+          ) : groups.map(({ year, items }) => (
+            <div key={year}>
+              <YearSepCard year={year} />
+              {items.map(v => {
+                const { produit, gain, pct } = getGainDisplay(v)
+                return (
+                  <div key={v.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span style={BADGE}>{v.indice}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-text-muted text-xs font-mono">{new Date(v.date).toLocaleDateString('fr-FR')}</span>
+                        <button
+                          onClick={() => deleteVente(v.id)}
+                          title="Supprimer"
+                          style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }}
+                          className="hover:opacity-100 transition-opacity"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                  {gain !== null && (
-                    <div className="col-span-2">
-                      <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">Gain / Perte</p>
-                      <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(gain) }}>
-                        {gain >= 0 ? '+' : ''}{fmt(gain)} €
-                        {pct !== null && <span className="text-xs ml-1">({pct >= 0 ? '+' : ''}{fmt(pct)} %)</span>}
-                      </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[['Parts vendues', fmt(v.nb_parts, 4)], ['Prix de vente', fmt(v.prix_vente, 4) + ' €'], ['Frais', fmt(v.frais) + ' €'], ['Montant récupéré', fmt(produit) + ' €']].map(([l, val]) => (
+                        <div key={l}>
+                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">{l}</p>
+                          <p className="text-text-primary text-sm font-bold mt-0.5">{val}</p>
+                        </div>
+                      ))}
+                      {gain !== null && (
+                        <div className="col-span-2">
+                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted">Gain / Perte</p>
+                          <p className="text-sm font-bold mt-0.5" style={{ color: gainColor(gain) }}>
+                            {gain >= 0 ? '+' : ''}{fmt(gain)} €
+                            {pct !== null && <span className="text-xs ml-1">({pct >= 0 ? '+' : ''}{fmt(pct)} %)</span>}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
         </div>
 
         {/* Desktop : tableau */}
@@ -302,31 +433,56 @@ export default function Ventes() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Date', 'Indice', 'Parts', 'Prix vente', 'Frais', 'Montant récupéré', 'Gain €', 'Gain %'].map(h => (
+                    {['Date', 'Indice', 'Parts', 'Prix vente', 'Frais', 'Montant récupéré', 'Gain €', 'Gain %', ''].map(h => (
                       <th key={h} className="text-left px-4 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {ventes.map((v, i) => {
-                    const { produit, gain, pct } = getGainDisplay(v)
-                    return (
-                      <tr key={v.id} style={{ borderBottom: i < ventes.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                        <td className="px-4 py-3 text-text-muted font-mono text-xs">{new Date(v.date).toLocaleDateString('fr-FR')}</td>
-                        <td className="px-4 py-3"><span style={BADGE}>{v.indice}</span></td>
-                        <td className="px-4 py-3 text-text-primary">{fmt(v.nb_parts, 4)}</td>
-                        <td className="px-4 py-3 text-text-primary">{fmt(v.prix_vente, 4)} €</td>
-                        <td className="px-4 py-3 text-text-muted">{fmt(v.frais)} €</td>
-                        <td className="px-4 py-3 text-text-primary font-bold">{fmt(produit)} €</td>
-                        <td className="px-4 py-3 font-bold" style={{ color: gain !== null ? gainColor(gain) : '#3a5080' }}>
-                          {gain !== null ? (gain >= 0 ? '+' : '') + fmt(gain) + ' €' : '—'}
-                        </td>
-                        <td className="px-4 py-3 font-bold" style={{ color: pct !== null ? gainColor(pct) : '#3a5080' }}>
-                          {pct !== null ? (pct >= 0 ? '+' : '') + fmt(pct) + ' %' : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {groups.map(({ year, items }) => (
+                    <>
+                      <YearSepRow key={`sep-${year}`} colSpan={9} year={year} />
+                      {items.map((v, i) => {
+                        const { produit, gain, pct } = getGainDisplay(v)
+                        return (
+                          <tr key={v.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                            <td className="px-4 py-3 text-text-muted font-mono text-xs">{new Date(v.date).toLocaleDateString('fr-FR')}</td>
+                            <td className="px-4 py-3">
+                              <EditCellIndice
+                                vente={v}
+                                editingId={editingId}
+                                editValue={editValue}
+                                onStart={startEditIndice}
+                                onChange={setEditValue}
+                                onCommit={commitEditIndice}
+                                actifsTickers={actifsTickers}
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-text-primary">{fmt(v.nb_parts, 4)}</td>
+                            <td className="px-4 py-3 text-text-primary">{fmt(v.prix_vente, 4)} €</td>
+                            <td className="px-4 py-3 text-text-muted">{fmt(v.frais)} €</td>
+                            <td className="px-4 py-3 text-text-primary font-bold">{fmt(produit)} €</td>
+                            <td className="px-4 py-3 font-bold" style={{ color: gain !== null ? gainColor(gain) : '#3a5080' }}>
+                              {gain !== null ? (gain >= 0 ? '+' : '') + fmt(gain) + ' €' : '—'}
+                            </td>
+                            <td className="px-4 py-3 font-bold" style={{ color: pct !== null ? gainColor(pct) : '#3a5080' }}>
+                              {pct !== null ? (pct >= 0 ? '+' : '') + fmt(pct) + ' %' : '—'}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              <button
+                                onClick={() => deleteVente(v.id)}
+                                title="Supprimer"
+                                style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }}
+                                className="hover:opacity-100 transition-opacity"
+                              >
+                                <TrashIcon />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </>
+                  ))}
                 </tbody>
               </table>
             </div>
