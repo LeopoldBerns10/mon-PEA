@@ -5,9 +5,13 @@ import PageWrapper from '../components/PageWrapper'
 const B = { border: '1px solid rgba(255,255,255,0.12)' }
 const BADGE_VERSEMENT = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(58,123,213,0.15)', border: '1px solid #3a7bd5', color: '#3a7bd5' }
 const BADGE_DIVIDENDE = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(240,192,64,0.12)', border: '1px solid #f0c040', color: '#f0c040' }
+const BADGE_REMBOURSEMENT = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(42,154,90,0.12)', border: '1px solid #2a9a5a', color: '#2a9a5a' }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 const EDIT_INPUT = { borderBottom: '1px solid #3a7bd5', background: 'transparent', outline: 'none', color: '#e8eaf0', fontSize: '0.8125rem', width: '100%' }
+const MENU = { position: 'absolute', right: 0, top: '110%', zIndex: 20, background: '#0c1a3a', border: '1px solid #2a4a8a', borderRadius: 8, padding: '4px 0', minWidth: 130, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }
+const MENU_EDIT = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#3a7bd5', fontSize: 13, fontWeight: 600 }
+const MENU_DEL = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#a04a4a', fontSize: 13, fontWeight: 600 }
 
 function todayFR() {
   const d = new Date()
@@ -74,9 +78,18 @@ const TrashIcon = () => (
   </svg>
 )
 
+const PencilIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+)
+
 function TypeBadge({ type }) {
-  const isDividende = (type || 'versement') === 'dividende'
-  return <span style={isDividende ? BADGE_DIVIDENDE : BADGE_VERSEMENT}>{isDividende ? 'Dividende' : 'Versement'}</span>
+  const t = type || 'versement'
+  if (t === 'dividende') return <span style={BADGE_DIVIDENDE}>Dividende</span>
+  if (t === 'remboursement') return <span style={BADGE_REMBOURSEMENT}>Remboursement</span>
+  return <span style={BADGE_VERSEMENT}>Versement</span>
 }
 
 function Modal({ onClose, onSaved }) {
@@ -127,6 +140,7 @@ function Modal({ onClose, onSaved }) {
             <select value={type} onChange={e => setType(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }}>
               <option value="versement">Versement</option>
               <option value="dividende">Dividende</option>
+              <option value="remboursement">Remboursement</option>
             </select>
           </div>
           {error && <p className="text-loss text-xs text-center">{error}</p>}
@@ -147,6 +161,7 @@ export default function Injections() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editRow, setEditRow] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(null)
 
   async function fetchInjections() {
     setLoading(true)
@@ -202,6 +217,9 @@ export default function Injections() {
           </div>
         )}
 
+        {/* Overlay ferme le menu contextuel mobile */}
+        {menuOpen && <div onClick={() => setMenuOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />}
+
         {/* Mobile : liste cartes */}
         <div className="md:hidden flex flex-col gap-3">
           {loading ? (
@@ -239,6 +257,7 @@ export default function Injections() {
                               <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, paddingRight: 4 }}>
                                 <option value="versement">Versement</option>
                                 <option value="dividende">Dividende</option>
+                                <option value="remboursement">Remboursement</option>
                               </select>
                             </div>
                             <div className="flex gap-2 mt-1">
@@ -255,8 +274,18 @@ export default function Injections() {
                           <TypeBadge type={inj.type} />
                           <div className="flex items-center gap-2">
                             <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</span>
-                            <button onClick={() => startEditRow(inj)} title="Modifier" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, opacity: 0.6 }} className="hover:opacity-100 transition-opacity">✏️</button>
-                            <button onClick={() => deleteInjection(inj.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                            <div style={{ position: 'relative' }}>
+                              <button
+                                onClick={() => setMenuOpen(menuOpen === inj.id ? null : inj.id)}
+                                style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, cursor: 'pointer', padding: '2px 8px', color: '#8899bb', fontSize: 15, fontWeight: 700, lineHeight: 1 }}
+                              >···</button>
+                              {menuOpen === inj.id && (
+                                <div style={MENU}>
+                                  <button style={MENU_EDIT} onClick={() => { startEditRow(inj); setMenuOpen(null) }}>Modifier</button>
+                                  <button style={MENU_DEL} onClick={() => { setMenuOpen(null); deleteInjection(inj.id) }}>Supprimer</button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
@@ -283,12 +312,12 @@ export default function Injections() {
               <p className="text-text-muted text-sm">Aucune injection enregistrée</p>
             </div>
           ) : (
-            <div className="rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B }}>
-              <table className="w-full text-sm">
+            <div className="rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B, maxWidth: 1100 }}>
+              <table className="w-full" style={{ fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Date', 'Type', 'Montant', 'Note', ''].map(h => (
-                      <th key={h} className="text-left px-5 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted">{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--color-text-muted)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -301,22 +330,23 @@ export default function Injections() {
                         if (isEditing) {
                           return (
                             <tr key={inj.id} style={{ backgroundColor: 'rgba(58,123,213,0.07)', borderBottom: '1px solid rgba(58,123,213,0.2)' }}>
-                              <td className="px-5 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT, minWidth: 80 }} />
                               </td>
-                              <td className="px-5 py-2">
-                                <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 90 }}>
+                              <td style={{ padding: '8px 12px' }}>
+                                <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 110 }}>
                                   <option value="versement">Versement</option>
                                   <option value="dividende">Dividende</option>
+                                  <option value="remboursement">Remboursement</option>
                                 </select>
                               </td>
-                              <td className="px-5 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input type="number" value={editRow.montant} onChange={e => setEditRow({ ...editRow, montant: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 80 }} />
                               </td>
-                              <td className="px-5 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input value={editRow.note} onChange={e => setEditRow({ ...editRow, note: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 100 }} />
                               </td>
-                              <td className="px-2 py-2">
+                              <td style={{ padding: '8px 8px' }}>
                                 <div className="flex items-center gap-1 justify-end">
                                   <button onClick={saveEditRow} style={{ background: '#2a9a5a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✓</button>
                                   <button onClick={() => setEditRow(null)} style={{ background: '#a04a4a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✗</button>
@@ -327,14 +357,14 @@ export default function Injections() {
                         }
                         return (
                           <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                            <td className="px-5 py-3 font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
-                            <td className="px-5 py-3"><TypeBadge type={inj.type} /></td>
-                            <td className="px-5 py-3 text-text-primary font-bold">{fmt(inj.montant)}</td>
-                            <td className="px-5 py-3 text-text-muted text-xs">{inj.note || '—'}</td>
-                            <td className="px-3 py-3">
+                            <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#8bb8f0', fontSize: 12 }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
+                            <td style={{ padding: '10px 12px' }}><TypeBadge type={inj.type} /></td>
+                            <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>{fmt(inj.montant)}</td>
+                            <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)', fontSize: 12 }}>{inj.note || '—'}</td>
+                            <td style={{ padding: '10px 8px' }}>
                               <div className="flex items-center justify-end gap-2">
-                                <button onClick={() => startEditRow(inj)} title="Modifier" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontSize: 13, opacity: 0.5 }} className="hover:opacity-100 transition-opacity">✏️</button>
-                                <button onClick={() => deleteInjection(inj.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                                <button onClick={() => startEditRow(inj)} title="Modifier" style={{ color: '#f0c040', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.6, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><PencilIcon /></button>
+                                <button onClick={() => deleteInjection(inj.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.6, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
                               </div>
                             </td>
                           </tr>
