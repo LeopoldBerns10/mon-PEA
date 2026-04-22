@@ -58,19 +58,20 @@ export default function Dashboard() {
 
       const totalInjecte = (injections || []).reduce((s, r) => s + Number(r.montant), 0)
 
-      // SUM(prix_ttc) des ordres ouverts
-      const ordresOuverts = (ordres || []).filter(isOuvert)
-      const totalPrixTTCOuverts = ordresOuverts.reduce(
+      // SUM(prix_ttc) de TOUS les ordres (ouverts ET vendus)
+      const totalDepense = (ordres || []).reduce(
         (s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0
       )
+      // Ordres ouverts pour les positions uniquement
+      const ordresOuverts = (ordres || []).filter(isOuvert)
 
       // SUM(montant_recupere) des ventes = nb_parts * prix_vente - frais
       const totalMontantRecupere = (ventes || []).reduce(
         (s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0
       )
 
-      // Liquidités = injections - prix_ttc_ouverts + montant_recupere_ventes
-      const liquidites = totalInjecte - totalPrixTTCOuverts + totalMontantRecupere
+      // Liquidités = injections - total dépensé (tous ordres) + récupéré (ventes)
+      const liquidites = totalInjecte - totalDepense + totalMontantRecupere
 
       // Gain net = Liquidités - Total injecté
       const gainNet = liquidites - totalInjecte
