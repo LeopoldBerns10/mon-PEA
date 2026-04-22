@@ -34,7 +34,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(b) - Number(a))
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -70,6 +70,11 @@ const TrashIcon = () => (
     <path d="M9 6V4h6v2" />
   </svg>
 )
+
+function BadgeIndice({ text }) {
+  const long = text && text.length > 6
+  return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px' }}>{text}</span>
+}
 
 function EditCell({ ordre, field, display, editing, editValue, onStart, onChange, onCommit }) {
   const isEditing = editing?.id === ordre.id && editing?.field === field
@@ -128,7 +133,7 @@ function EditCellIndice({ ordre, editing, editValue, onStart, onChange, onCommit
       className={editable ? 'cursor-pointer hover:opacity-70 transition-opacity' : ''}
       title={editable ? 'Cliquer pour modifier' : ''}
     >
-      <span style={BADGE}>{ordre.indice}</span>
+      <BadgeIndice text={ordre.indice} />
     </span>
   )
 }
@@ -283,7 +288,7 @@ export default function Ordres() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: ordresData }, { data: actifsData }] = await Promise.all([
-      supabase.from('ordres').select('*').order('date', { ascending: false }),
+      supabase.from('ordres').select('*').order('date', { ascending: true }),
       supabase.from('actifs').select('*'),
     ])
     setOrdres(ordresData || [])
@@ -353,14 +358,14 @@ export default function Ordres() {
                 const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
                 const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
                 return (
-                  <div key={o.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', ...B, opacity: vendu ? 0.6 : 1 }}>
+                  <div key={o.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <span style={BADGE}>{o.indice}</span>
+                        <BadgeIndice text={o.indice} />
                         {vendu && <span style={BADGE_VENDU}>VENDU</span>}
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="text-text-muted text-xs font-mono">{new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
                         <button
                           onClick={() => deleteOrdre(o.id)}
                           title="Supprimer"
@@ -434,15 +439,12 @@ export default function Ordres() {
                         return (
                           <tr
                             key={o.id}
-                            style={{
-                              borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-                              opacity: vendu ? 0.6 : 1,
-                            }}
+                            style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
                           >
                             <td className="px-5 py-3">
                               <EditCell
                                 ordre={o} field="date"
-                                display={<span className="text-text-muted font-mono text-xs">{new Date(o.date).toLocaleDateString('fr-FR')}</span>}
+                                display={<span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>}
                                 editing={editing} editValue={editValue}
                                 onStart={startEdit} onChange={setEditValue} onCommit={commitEdit}
                               />

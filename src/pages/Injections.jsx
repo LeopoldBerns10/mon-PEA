@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase'
 import PageWrapper from '../components/PageWrapper'
 
 const B = { border: '1px solid rgba(255,255,255,0.12)' }
+const BADGE_VERSEMENT = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(58,123,213,0.15)', border: '1px solid #3a7bd5', color: '#3a7bd5' }
+const BADGE_DIVIDENDE = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(240,192,64,0.12)', border: '1px solid #f0c040', color: '#f0c040' }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 
@@ -28,7 +30,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(b) - Number(a))
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -69,6 +71,7 @@ function Modal({ onClose, onSaved }) {
   const [date, setDate] = useState(todayFR())
   const [montant, setMontant] = useState('')
   const [note, setNote] = useState('')
+  const [type, setType] = useState('versement')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -80,7 +83,7 @@ function Modal({ onClose, onSaved }) {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const { error: err } = await supabase.from('injections').insert({
-      user_id: user.id, date: isoDate, montant: Number(montant), note: note.trim() || null,
+      user_id: user.id, date: isoDate, montant: Number(montant), note: note.trim() || null, type,
     })
     setLoading(false)
     if (err) { setError(err.message); return }
@@ -115,6 +118,13 @@ function Modal({ onClose, onSaved }) {
             <label className={LABEL}>Note (optionnel)</label>
             <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="ex: virement mensuel" className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Type</label>
+            <select value={type} onChange={e => setType(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }}>
+              <option value="versement">Versement</option>
+              <option value="dividende">Dividende</option>
+            </select>
+          </div>
           {error && <p className="text-loss text-xs text-center">{error}</p>}
           <div className="flex gap-3 mt-2">
             <button type="button" onClick={onClose} className="flex-1 rounded-input py-3 text-sm font-bold" style={{ ...B, color: '#5a9aee', backgroundColor: 'transparent' }}>Annuler</button>
@@ -135,7 +145,7 @@ export default function Injections() {
 
   async function fetchInjections() {
     setLoading(true)
-    const { data } = await supabase.from('injections').select('*').order('date', { ascending: false })
+    const { data } = await supabase.from('injections').select('*').order('date', { ascending: true })
     setInjections(data || [])
     setLoading(false)
   }
@@ -188,22 +198,25 @@ export default function Injections() {
                 <div key={year}>
                   <YearSepCard year={year} />
                   {items.map(inj => (
-                    <div key={inj.id} className="rounded-card px-4 py-3 flex items-center justify-between mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
-                      <div>
-                        <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
-                        {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
+                    <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span style={(inj.type || 'versement') === 'dividende' ? BADGE_DIVIDENDE : BADGE_VERSEMENT}>
+                          {(inj.type || 'versement') === 'dividende' ? 'Dividende' : 'Versement'}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</span>
+                          <button
+                            onClick={() => deleteInjection(inj.id)}
+                            title="Supprimer"
+                            style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }}
+                            className="hover:opacity-100 transition-opacity"
+                          >
+                            <TrashIcon />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <p className="text-text-muted text-xs font-mono">{new Date(inj.date).toLocaleDateString('fr-FR')}</p>
-                        <button
-                          onClick={() => deleteInjection(inj.id)}
-                          title="Supprimer"
-                          style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }}
-                          className="hover:opacity-100 transition-opacity"
-                        >
-                          <TrashIcon />
-                        </button>
-                      </div>
+                      <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
+                      {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
                     </div>
                   ))}
                 </div>
@@ -229,7 +242,7 @@ export default function Injections() {
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Date', 'Montant', 'Note', ''].map(h => (
+                    {['Date', 'Type', 'Montant', 'Note', ''].map(h => (
                       <th key={h} className="text-left px-5 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted">{h}</th>
                     ))}
                   </tr>
@@ -237,10 +250,15 @@ export default function Injections() {
                 <tbody>
                   {groups.map(({ year, items }) => (
                     <>
-                      <YearSepRow key={`sep-${year}`} colSpan={4} year={year} />
+                      <YearSepRow key={`sep-${year}`} colSpan={5} year={year} />
                       {items.map((inj, i) => (
                         <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                          <td className="px-5 py-3 text-text-muted font-mono text-xs">{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
+                          <td className="px-5 py-3 font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
+                          <td className="px-5 py-3">
+                            <span style={(inj.type || 'versement') === 'dividende' ? BADGE_DIVIDENDE : BADGE_VERSEMENT}>
+                              {(inj.type || 'versement') === 'dividende' ? 'Dividende' : 'Versement'}
+                            </span>
+                          </td>
                           <td className="px-5 py-3 text-text-primary font-bold">{fmt(inj.montant)}</td>
                           <td className="px-5 py-3 text-text-muted text-xs">{inj.note || '—'}</td>
                           <td className="px-3 py-3 text-right">

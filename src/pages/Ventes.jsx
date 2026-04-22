@@ -32,7 +32,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(b) - Number(a))
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -69,6 +69,11 @@ const TrashIcon = () => (
   </svg>
 )
 
+function BadgeIndice({ text }) {
+  const long = text && text.length > 6
+  return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px' }}>{text}</span>
+}
+
 function EditCellIndice({ vente, editingId, editValue, onStart, onChange, onCommit, actifsTickers }) {
   const isEditing = editingId === vente.id
 
@@ -97,7 +102,7 @@ function EditCellIndice({ vente, editingId, editValue, onStart, onChange, onComm
       className="cursor-pointer hover:opacity-70 transition-opacity"
       title="Cliquer pour modifier"
     >
-      <span style={BADGE}>{vente.indice}</span>
+      <BadgeIndice text={vente.indice} />
     </span>
   )
 }
@@ -312,7 +317,7 @@ export default function Ventes() {
   async function fetchData() {
     setLoading(true)
     const [{ data: ventesData }, { data: ordresData }, { data: actifsData }] = await Promise.all([
-      supabase.from('ventes').select('*').order('date', { ascending: false }),
+      supabase.from('ventes').select('*').order('date', { ascending: true }),
       supabase.from('ordres').select('*').order('date', { ascending: true }),
       supabase.from('actifs').select('*'),
     ])
@@ -383,9 +388,9 @@ export default function Ventes() {
                 return (
                   <div key={v.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
                     <div className="flex items-center justify-between mb-3">
-                      <span style={BADGE}>{v.indice}</span>
+                      <BadgeIndice text={v.indice} />
                       <div className="flex items-center gap-3">
-                        <span className="text-text-muted text-xs font-mono">{new Date(v.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(v.date).toLocaleDateString('fr-FR')}</span>
                         <button
                           onClick={() => deleteVente(v.id)}
                           title="Supprimer"
@@ -446,7 +451,7 @@ export default function Ventes() {
                         const { produit, gain, pct } = getGainDisplay(v)
                         return (
                           <tr key={v.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                            <td className="px-4 py-3 text-text-muted font-mono text-xs">{new Date(v.date).toLocaleDateString('fr-FR')}</td>
+                            <td className="px-4 py-3 font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(v.date).toLocaleDateString('fr-FR')}</td>
                             <td className="px-4 py-3">
                               <EditCellIndice
                                 vente={v}
