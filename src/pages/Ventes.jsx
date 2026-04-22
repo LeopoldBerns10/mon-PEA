@@ -7,6 +7,9 @@ const BADGE = { background: '#0d2040', border: '1px solid #1e3a6e', color: '#f0c
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 const EDIT_INPUT = { borderBottom: '1px solid #3a7bd5', background: 'transparent', outline: 'none', color: '#e8eaf0', fontSize: '0.8125rem', width: '100%' }
+const MENU = { position: 'absolute', right: 0, top: '110%', zIndex: 20, background: '#0c1a3a', border: '1px solid #2a4a8a', borderRadius: 8, padding: '4px 0', minWidth: 130, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }
+const MENU_EDIT = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#3a7bd5', fontSize: 13, fontWeight: 600 }
+const MENU_DEL = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#a04a4a', fontSize: 13, fontWeight: 600 }
 
 function todayFR() {
   const d = new Date()
@@ -230,6 +233,7 @@ export default function Ventes() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editRow, setEditRow] = useState(null)
+  const [menuOpen, setMenuOpen] = useState(null)
 
   async function fetchData() {
     setLoading(true)
@@ -291,6 +295,8 @@ export default function Ventes() {
           </button>
         </div>
 
+        {menuOpen && <div onClick={() => setMenuOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />}
+
         {/* Mobile : cartes */}
         <div className="md:hidden flex flex-col gap-3">
           {loading ? (
@@ -349,8 +355,18 @@ export default function Ventes() {
                       <BadgeIndice text={v.indice} />
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(v.date).toLocaleDateString('fr-FR')}</span>
-                        <button onClick={() => startEditRow(v)} title="Modifier" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 13, opacity: 0.6 }} className="hover:opacity-100 transition-opacity">✏️</button>
-                        <button onClick={() => deleteVente(v.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, opacity: 0.6, display: 'flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>
+                        <div style={{ position: 'relative' }}>
+                          <button
+                            onClick={() => setMenuOpen(menuOpen === v.id ? null : v.id)}
+                            style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, cursor: 'pointer', padding: '2px 8px', color: '#8899bb', fontSize: 15, fontWeight: 700, lineHeight: 1 }}
+                          >···</button>
+                          {menuOpen === v.id && (
+                            <div style={MENU}>
+                              <button style={MENU_EDIT} onClick={() => { startEditRow(v); setMenuOpen(null) }}>Modifier</button>
+                              <button style={MENU_DEL} onClick={() => { setMenuOpen(null); deleteVente(v.id) }}>Supprimer</button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -385,12 +401,12 @@ export default function Ventes() {
               <p className="text-text-muted text-sm">Aucune vente enregistrée</p>
             </div>
           ) : (
-            <div className="rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B }}>
-              <table className="w-full text-sm">
+            <div className="rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B, maxWidth: 1100 }}>
+              <table className="w-full" style={{ fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Date', 'Indice', 'Parts', 'Prix vente', 'Frais', 'Montant récupéré', 'Gain €', 'Gain %', ''].map(h => (
-                      <th key={h} className="text-left px-4 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted whitespace-nowrap">{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -405,26 +421,26 @@ export default function Ventes() {
                         if (isEditing) {
                           return (
                             <tr key={v.id} style={{ backgroundColor: 'rgba(58,123,213,0.07)', borderBottom: '1px solid rgba(58,123,213,0.2)' }}>
-                              <td className="px-4 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT, minWidth: 80 }} />
                               </td>
-                              <td className="px-4 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input list="desk-ventes-actifs" value={editRow.indice} onChange={e => setEditRow({ ...editRow, indice: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 65 }} className="uppercase" />
                                 <datalist id="desk-ventes-actifs">{actifsTickers.map(t => <option key={t} value={t} />)}</datalist>
                               </td>
-                              <td className="px-4 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input type="number" value={editRow.nb_parts} onChange={e => setEditRow({ ...editRow, nb_parts: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 60 }} />
                               </td>
-                              <td className="px-4 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input type="number" value={editRow.prix_vente} onChange={e => setEditRow({ ...editRow, prix_vente: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 65 }} />
                               </td>
-                              <td className="px-4 py-2">
+                              <td style={{ padding: '8px 12px' }}>
                                 <input type="number" value={editRow.frais} onChange={e => setEditRow({ ...editRow, frais: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 50 }} />
                               </td>
-                              <td className="px-4 py-2 text-text-muted text-xs">—</td>
-                              <td className="px-4 py-2 text-text-muted text-xs">—</td>
-                              <td className="px-4 py-2 text-text-muted text-xs">—</td>
-                              <td className="px-2 py-2">
+                              <td style={{ padding: '8px 12px', color: '#3a5080' }}>—</td>
+                              <td style={{ padding: '8px 12px', color: '#3a5080' }}>—</td>
+                              <td style={{ padding: '8px 12px', color: '#3a5080' }}>—</td>
+                              <td style={{ padding: '8px 8px' }}>
                                 <div className="flex items-center gap-1 justify-end">
                                   <button onClick={saveEditRow} style={{ background: '#2a9a5a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✓</button>
                                   <button onClick={() => setEditRow(null)} style={{ background: '#a04a4a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✗</button>
@@ -436,19 +452,19 @@ export default function Ventes() {
 
                         return (
                           <tr key={v.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                            <td className="px-4 py-3 font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(v.date).toLocaleDateString('fr-FR')}</td>
-                            <td className="px-4 py-3"><BadgeIndice text={v.indice} /></td>
-                            <td className="px-4 py-3 text-text-primary">{fmt(v.nb_parts, 4)}</td>
-                            <td className="px-4 py-3 text-text-primary">{fmt(v.prix_vente, 4)} €</td>
-                            <td className="px-4 py-3 text-text-muted">{fmt(v.frais)} €</td>
-                            <td className="px-4 py-3 text-text-primary font-bold">{fmt(produit)} €</td>
-                            <td className="px-4 py-3 font-bold" style={{ color: gain !== null ? gainColor(gain) : '#3a5080' }}>
+                            <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#8bb8f0', fontSize: 12 }}>{new Date(v.date).toLocaleDateString('fr-FR')}</td>
+                            <td style={{ padding: '10px 12px' }}><BadgeIndice text={v.indice} /></td>
+                            <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{fmt(v.nb_parts, 4)}</td>
+                            <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{fmt(v.prix_vente, 4)} €</td>
+                            <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)' }}>{fmt(v.frais)} €</td>
+                            <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>{fmt(produit)} €</td>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, color: gain !== null ? gainColor(gain) : '#3a5080' }}>
                               {gain !== null ? (gain >= 0 ? '+' : '') + fmt(gain) + ' €' : '—'}
                             </td>
-                            <td className="px-4 py-3 font-bold" style={{ color: pct !== null ? gainColor(pct) : '#3a5080' }}>
+                            <td style={{ padding: '10px 12px', fontWeight: 700, color: pct !== null ? gainColor(pct) : '#3a5080' }}>
                               {pct !== null ? (pct >= 0 ? '+' : '') + fmt(pct) + ' %' : '—'}
                             </td>
-                            <td className="px-3 py-3">
+                            <td style={{ padding: '10px 8px' }}>
                               <div className="flex items-center justify-end gap-2">
                                 <button onClick={() => startEditRow(v)} title="Modifier" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontSize: 13, opacity: 0.5 }} className="hover:opacity-100 transition-opacity">✏️</button>
                                 <button onClick={() => deleteVente(v.id)} title="Supprimer" style={{ color: '#a04a4a', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', opacity: 0.5, display: 'inline-flex', alignItems: 'center' }} className="hover:opacity-100 transition-opacity"><TrashIcon /></button>

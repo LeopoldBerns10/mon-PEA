@@ -181,6 +181,7 @@ function ConfirmDelete({ actif, onConfirm, onCancel }) {
 
 export default function Actifs() {
   const [actifs, setActifs] = useState([])
+  const [ordres, setOrdres] = useState([])
   const [prices, setPrices] = useState({})
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -189,9 +190,13 @@ export default function Actifs() {
 
   async function fetchActifs() {
     setLoading(true)
-    const { data } = await supabase.from('actifs').select('*').order('ticker')
-    const list = data || []
+    const [{ data: actifsData }, { data: ordresData }] = await Promise.all([
+      supabase.from('actifs').select('*').order('ticker'),
+      supabase.from('ordres').select('*').order('date', { ascending: true }),
+    ])
+    const list = actifsData || []
     setActifs(list)
+    setOrdres((ordresData || []).filter(o => !o.statut || o.statut === 'ouvert'))
     setLoading(false)
     if (list.length > 0) {
       const p = await getPrixMultiple(list)
@@ -214,6 +219,24 @@ export default function Actifs() {
   }
 
   useEffect(() => { fetchActifs() }, [])
+
+  // Bandeau : total investi + performance globale pondérée
+  const totalInvesti = ordres.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+  const perIndice = {}
+  ordres.forEach(o => {
+    if (!perIndice[o.indice]) perIndice[o.indice] = { invested: 0, parts: 0 }
+    perIndice[o.indice].invested += Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
+    perIndice[o.indice].parts += Number(o.nb_parts)
+  })
+  let perfNum = 0, perfDen = 0
+  Object.entries(perIndice).forEach(([indice, data]) => {
+    const pruMoyen = data.parts > 0 ? data.invested / data.parts : 0
+    const prixLive = prices[indice]
+    if (!prixLive || pruMoyen === 0) return
+    perfNum += ((prixLive - pruMoyen) / pruMoyen * 100) * data.invested
+    perfDen += data.invested
+  })
+  const perfGlobale = perfDen > 0 ? perfNum / perfDen : null
 
   return (
     <PageWrapper>
@@ -242,6 +265,36 @@ export default function Actifs() {
             </button>
           </div>
         </div>
+
+        {/* Bandeau récapitulatif sticky */}
+        {!loading && totalInvesti > 0 && (
+          <div style={{
+            background: '#0d1b3e',
+            border: '1px solid #2a4a8a',
+            borderRadius: 12,
+            padding: '16px 20px',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            marginBottom: 16,
+            display: 'flex',
+            gap: 32,
+            alignItems: 'center',
+          }}>
+            <div>
+              <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Total investi</p>
+              <p style={{ color: '#c8e0ff', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{fmt(totalInvesti)} €</p>
+            </div>
+            {perfGlobale !== null && (
+              <div>
+                <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Performance globale</p>
+                <p style={{ color: perfGlobale >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 20, fontWeight: 800, marginTop: 4 }}>
+                  {perfGlobale >= 0 ? '+' : ''}{fmt(perfGlobale)} %
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <p className="text-text-muted text-sm">Chargement…</p>
@@ -272,12 +325,12 @@ export default function Actifs() {
             </div>
 
             {/* Desktop : tableau */}
-            <div className="hidden md:block rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B }}>
-              <table className="w-full text-sm">
+            <div className="hidden md:block rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B, maxWidth: 1100 }}>
+              <table className="w-full" style={{ fontSize: 13 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Ticker', 'Nom', 'Yahoo Finance', 'Prix live', ''].map(h => (
-                      <th key={h} className="text-left px-5 py-3 font-mono text-[9px] uppercase tracking-[2px] text-text-muted">{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--color-text-muted)' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -286,18 +339,18 @@ export default function Actifs() {
                     const prix = prices[a.ticker]
                     return (
                       <tr key={a.id} style={{ borderBottom: i < actifs.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                        <td className="px-5 py-3"><span style={BADGE}>{a.ticker}</span></td>
-                        <td className="px-5 py-3 text-text-primary">{a.nom}</td>
-                        <td className="px-5 py-3 font-mono text-xs" style={{ color: '#3a5080' }}>{a.ticker_yahoo}</td>
-                        <td className="px-5 py-3 text-text-primary font-bold">
+                        <td style={{ padding: '10px 12px' }}><span style={BADGE}>{a.ticker}</span></td>
+                        <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{a.nom}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: 12, color: '#3a5080' }}>{a.ticker_yahoo}</td>
+                        <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>
                           {prix === undefined
                             ? <span style={{ color: '#3a5080' }}>…</span>
                             : prix === null
-                            ? <span className="text-xs" style={{ color: '#a04a4a' }}>Introuvable</span>
+                            ? <span style={{ fontSize: 11, color: '#a04a4a' }}>Introuvable</span>
                             : fmt(prix) + ' €'}
                         </td>
-                        <td className="px-5 py-3 text-right">
-                          <button onClick={() => setDeleteConfirm(a)} className="text-xs hover:opacity-75 transition-opacity" style={{ color: '#3a5080' }}>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                          <button onClick={() => setDeleteConfirm(a)} className="hover:opacity-75 transition-opacity" style={{ fontSize: 12, color: '#3a5080', background: 'none', border: 'none', cursor: 'pointer' }}>
                             Supprimer
                           </button>
                         </td>
