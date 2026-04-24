@@ -42,7 +42,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(b) - Number(a))
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -88,7 +88,7 @@ const PencilIcon = () => (
 
 function BadgeIndice({ text }) {
   const long = text && text.length > 6
-  return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px' }}>{text}</span>
+  return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px', maxWidth: long ? 60 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
 }
 
 function Modal({ onClose, onSaved, ordresOuverts }) {
@@ -361,7 +361,7 @@ export default function Ventes() {
                     <div className="flex items-center justify-between mb-3">
                       <BadgeIndice text={v.indice} />
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(v.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600 }}>{new Date(v.date).toLocaleDateString('fr-FR')}</span>
                         <div style={{ position: 'relative' }}>
                           <button
                             onClick={() => setMenuOpen(menuOpen === v.id ? null : v.id)}

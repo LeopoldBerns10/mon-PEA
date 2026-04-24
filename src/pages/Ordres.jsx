@@ -5,7 +5,7 @@ import { getPrixMultiple } from '../services/prixLive'
 
 const B = { border: '1px solid rgba(255,255,255,0.12)' }
 const BADGE = { background: '#0d2040', border: '1px solid #1e3a6e', color: '#f0c040', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }
-const BADGE_VENDU = { background: '#2a0a0a', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }
+const BADGE_VENDU = { border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
 const EDIT_INPUT = { borderBottom: '1px solid #3a7bd5', background: 'transparent', outline: 'none', color: '#e8eaf0', fontSize: '0.8125rem', width: '100%' }
@@ -44,7 +44,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(b) - Number(a))
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -90,7 +90,7 @@ const PencilIcon = () => (
 
 function BadgeIndice({ text }) {
   const long = text && text.length > 6
-  return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px' }}>{text}</span>
+  return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px', maxWidth: long ? 60 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
 }
 
 function Modal({ onClose, onSaved, actifs, prixMap }) {
@@ -212,10 +212,10 @@ export default function Ordres() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: ordresData }, { data: actifsData }, { data: injData }, { data: ventesData }] = await Promise.all([
-      supabase.from('ordres').select('*').order('date', { ascending: false }),
+      supabase.from('ordres').select('*').order('date', { ascending: true }),
       supabase.from('actifs').select('*'),
       supabase.from('injections').select('montant'),
-      supabase.from('ventes').select('nb_parts, prix_vente, frais'),
+      supabase.from('ventes').select('nb_parts, prix_vente, frais, gain_euros, gain_pct'),
     ])
     setOrdres(ordresData || [])
     setActifs(actifsData || [])
@@ -256,7 +256,8 @@ export default function Ordres() {
   const groups = groupByYear(ordres)
 
   const totalInjecte = injections.reduce((s, i) => s + Number(i.montant), 0)
-  const totalDepense = ordres.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+  const ordresOuverts = ordres.filter(isOuvert)
+  const totalDepense = ordresOuverts.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
   const totalRecupere = ventesLiq.reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0)
   const liquidites = totalInjecte - totalDepense + totalRecupere
 
@@ -357,7 +358,7 @@ export default function Ordres() {
                         {vendu && <span style={BADGE_VENDU}>VENDU</span>}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600 }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
                         <div style={{ position: 'relative' }}>
                           <button
                             onClick={() => setMenuOpen(menuOpen === o.id ? null : o.id)}
@@ -417,7 +418,7 @@ export default function Ordres() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Date', 'Indice', 'Parts', 'PRU', 'Frais', 'Prix TTC', 'Bénéf / Réalisé', ''].map(h => (
-                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap', minWidth: h === 'Indice' ? 100 : 'unset' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -467,9 +468,9 @@ export default function Ordres() {
                         return (
                           <tr key={o.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                             <td style={{ padding: '10px 12px' }}>
-                              <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontSize: 12 }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                              <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600, fontSize: 12 }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
                             </td>
-                            <td style={{ padding: '10px 12px' }}>
+                            <td style={{ padding: '10px 12px', minWidth: 100 }}>
                               <div className="flex items-center gap-2">
                                 <BadgeIndice text={o.indice} />
                                 {vendu && <span style={BADGE_VENDU}>VENDU</span>}
@@ -481,10 +482,14 @@ export default function Ordres() {
                             <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>{fmt(prixTTC)} €</td>
                             <td style={{ padding: '10px 12px', fontWeight: 700 }}>
                               {!vendu && pctBenef !== null ? (
-                                <span style={{ color: gainColor(pctBenef) }}>
-                                  {pctBenef >= 0 ? '+' : ''}{fmt(pctBenef)} %
-                                  {gainEuros !== null && <span style={{ fontSize: 11, marginLeft: 4, opacity: 0.7 }}>· {gainEuros >= 0 ? '+' : ''}{fmt(gainEuros)} €</span>}
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <span style={{ color: gainColor(pctBenef), fontSize: 13 }}>
+                                    {pctBenef >= 0 ? '+' : ''}{fmt(pctBenef)} %
+                                  </span>
+                                  <span style={{ color: gainColor(gainEuros), fontSize: 11 }}>
+                                    {gainEuros >= 0 ? '+' : ''}{fmt(gainEuros)} €
+                                  </span>
+                                </div>
                               ) : vendu && o.pct_realise != null ? (
                                 <span style={{ color: gainColor(o.pct_realise) }}>{o.pct_realise >= 0 ? '+' : ''}{fmt(o.pct_realise)} %</span>
                               ) : (

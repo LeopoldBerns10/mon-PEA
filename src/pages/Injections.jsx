@@ -41,7 +41,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(b) - Number(a))
+    .sort(([a], [b]) => Number(a) - Number(b))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -166,7 +166,7 @@ export default function Injections() {
   async function fetchInjections() {
     setLoading(true)
     const { data } = await supabase.from('injections').select('*').order('date', { ascending: false })
-    setInjections(data || [])
+    setInjections((data || []).reverse())
     setLoading(false)
   }
 
