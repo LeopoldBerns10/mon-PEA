@@ -44,7 +44,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(a) - Number(b))
+    .sort(([a], [b]) => Number(b) - Number(a))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
@@ -71,22 +71,6 @@ function YearSepCard({ year }) {
     </div>
   )
 }
-
-const TrashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6l-1 14H6L5 6" />
-    <path d="M10 11v6M14 11v6" />
-    <path d="M9 6V4h6v2" />
-  </svg>
-)
-
-const PencilIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-)
 
 function BadgeIndice({ text }) {
   const long = text && text.length > 6
@@ -212,7 +196,7 @@ export default function Ordres() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: ordresData }, { data: actifsData }, { data: injData }, { data: ventesData }] = await Promise.all([
-      supabase.from('ordres').select('*').order('date', { ascending: true }),
+      supabase.from('ordres').select('*').order('date', { ascending: false }),
       supabase.from('actifs').select('*'),
       supabase.from('injections').select('montant'),
       supabase.from('ventes').select('nb_parts, prix_vente, frais, gain_euros, gain_pct'),
@@ -257,15 +241,26 @@ export default function Ordres() {
 
   const totalInjecte = injections.reduce((s, i) => s + Number(i.montant), 0)
   const ordresOuverts = ordres.filter(isOuvert)
-  const totalDepense = ordresOuverts.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+
+  // Liquidités : tous les ordres (ouverts + vendus) pour éviter le double comptage
+  const totalDepense = ordres.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
   const totalRecupere = ventesLiq.reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0)
   const liquidites = totalInjecte - totalDepense + totalRecupere
+
+  // Récap positions ouvertes
+  const valeurMarche = ordresOuverts.reduce((s, o) => {
+    const p = prixMap[o.indice]
+    return s + (p ? Number(o.nb_parts) * p : 0)
+  }, 0)
+  const coutOuverts = ordresOuverts.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+  const pvEuros = valeurMarche - coutOuverts
+  const pvPct = coutOuverts > 0 ? (pvEuros / coutOuverts) * 100 : 0
 
   return (
     <PageWrapper>
       <div className="w-full max-w-[430px] md:max-w-content mx-auto px-5 md:px-8 pt-10 pb-6">
 
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted">Mon PEA</p>
             <h1 className="text-text-primary font-black text-xl tracking-tight mt-0.5">Mes ordres</h1>
@@ -275,12 +270,28 @@ export default function Ordres() {
           </button>
         </div>
 
+        {/* Récap portefeuille */}
+        {!loading && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div style={{ background: '#0d1b3e', border: '1px solid #2a4a8a', borderRadius: 12, padding: '14px 16px' }}>
+              <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Valeur en cours</p>
+              <p style={{ color: '#c8e0ff', fontSize: 18, fontWeight: 800, marginTop: 4 }}>{fmt(valeurMarche)} €</p>
+            </div>
+            <div style={{ background: '#0d1b3e', border: '1px solid #2a4a8a', borderRadius: 12, padding: '14px 16px' }}>
+              <p style={{ fontFamily: 'monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '2px', color: '#3a5080' }}>Plus-value</p>
+              <p style={{ color: gainColor(pvEuros), fontSize: 18, fontWeight: 800, marginTop: 4 }}>{pvEuros >= 0 ? '+' : ''}{fmt(pvEuros)} €</p>
+              <p style={{ color: gainColor(pvPct), fontSize: 11, fontWeight: 700, marginTop: 2 }}>{pvPct >= 0 ? '+' : ''}{fmt(pvPct)} %</p>
+            </div>
+          </div>
+        )}
+
+        {/* Liquidités sticky */}
         {!loading && totalInjecte > 0 && (
           <div style={{
             background: '#0d1b3e',
             border: '1px solid #2a4a8a',
             borderRadius: 12,
-            padding: '16px 20px',
+            padding: '14px 20px',
             position: 'sticky',
             top: 0,
             zIndex: 10,
@@ -291,7 +302,6 @@ export default function Ordres() {
           </div>
         )}
 
-        {/* Overlay ferme le menu contextuel mobile */}
         {menuOpen && <div onClick={() => setMenuOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />}
 
         {/* Mobile : cartes */}
@@ -307,10 +317,12 @@ export default function Ordres() {
               <YearSepCard year={year} />
               {items.map(o => {
                 const vendu = !isOuvert(o)
-                const prixTTC = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
+                const coutTotal = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
+                const prixTTC = coutTotal
                 const prixLive = prixMap[o.indice]
-                const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
-                const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
+                const valeurActuelle = !vendu && prixLive ? prixLive * Number(o.nb_parts) : null
+                const gainEuros = valeurActuelle !== null ? valeurActuelle - coutTotal : null
+                const pctBenef = gainEuros !== null && coutTotal > 0 ? (gainEuros / coutTotal) * 100 : null
                 const isEditing = editRow?.id === o.id
 
                 if (isEditing) {
@@ -358,7 +370,7 @@ export default function Ordres() {
                         {vendu && <span style={BADGE_VENDU}>VENDU</span>}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600 }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600 }}>{new Date(o.date + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
                         <div style={{ position: 'relative' }}>
                           <button
                             onClick={() => setMenuOpen(menuOpen === o.id ? null : o.id)}
@@ -429,9 +441,11 @@ export default function Ordres() {
                       {items.map((o, i) => {
                         const vendu = !isOuvert(o)
                         const prixLive = prixMap[o.indice]
-                        const prixTTC = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
-                        const pctBenef = !vendu && prixLive ? ((prixLive - Number(o.pru)) / Number(o.pru)) * 100 : null
-                        const gainEuros = !vendu && prixLive ? (prixLive - Number(o.pru)) * Number(o.nb_parts) : null
+                        const coutTotal = Number(o.nb_parts) * Number(o.pru) + Number(o.frais)
+                        const prixTTC = coutTotal
+                        const valeurActuelle = !vendu && prixLive ? prixLive * Number(o.nb_parts) : null
+                        const gainEuros = valeurActuelle !== null ? valeurActuelle - coutTotal : null
+                        const pctBenef = gainEuros !== null && coutTotal > 0 ? (gainEuros / coutTotal) * 100 : null
                         const isEditing = editRow?.id === o.id
 
                         if (isEditing) {
@@ -468,7 +482,7 @@ export default function Ordres() {
                         return (
                           <tr key={o.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                             <td style={{ padding: '10px 12px' }}>
-                              <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600, fontSize: 12 }}>{new Date(o.date).toLocaleDateString('fr-FR')}</span>
+                              <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600, fontSize: 12 }}>{new Date(o.date + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
                             </td>
                             <td style={{ padding: '10px 12px', minWidth: 100 }}>
                               <div className="flex items-center gap-2">

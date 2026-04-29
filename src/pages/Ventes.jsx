@@ -42,7 +42,7 @@ function groupByYear(items) {
     groups[year].push(item)
   })
   return Object.entries(groups)
-    .sort(([a], [b]) => Number(a) - Number(b))
+    .sort(([a], [b]) => Number(b) - Number(a))
     .map(([year, grp]) => ({ year: Number(year), items: grp }))
 }
 
