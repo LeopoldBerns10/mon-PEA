@@ -6,7 +6,6 @@ const B = { border: '1px solid rgba(255,255,255,0.12)' }
 const BADGE = { background: '#0d2040', border: '1px solid #1e3a6e', color: '#f0c040', borderRadius: '6px', padding: '2px 8px', fontSize: '11px', fontWeight: 700 }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
-const EDIT_INPUT = { borderBottom: '1px solid #3a7bd5', background: 'transparent', outline: 'none', color: '#e8eaf0', fontSize: '0.8125rem', width: '100%' }
 const MENU = { position: 'absolute', right: 0, top: '110%', zIndex: 20, background: '#0c1a3a', border: '1px solid #2a4a8a', borderRadius: 8, padding: '4px 0', minWidth: 130, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }
 const MENU_EDIT = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#3a7bd5', fontSize: 13, fontWeight: 600 }
 const MENU_DEL = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#a04a4a', fontSize: 13, fontWeight: 600 }
@@ -70,28 +69,12 @@ function YearSepCard({ year }) {
   )
 }
 
-const TrashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6l-1 14H6L5 6" />
-    <path d="M10 11v6M14 11v6" />
-    <path d="M9 6V4h6v2" />
-  </svg>
-)
-
-const PencilIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-)
-
 function BadgeIndice({ text }) {
   const long = text && text.length > 6
   return <span style={{ ...BADGE, fontSize: long ? '9px' : '11px', maxWidth: long ? 60 : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
 }
 
-function Modal({ onClose, onSaved, ordresOuverts }) {
+function AddModal({ onClose, onSaved, ordresOuverts }) {
   const [date, setDate] = useState(todayFR())
   const [indice, setIndice] = useState('')
   const [nbParts, setNbParts] = useState('')
@@ -233,13 +216,113 @@ function Modal({ onClose, onSaved, ordresOuverts }) {
   )
 }
 
+function EditVenteModal({ vente, onClose, onSaved, actifsTickers }) {
+  const [date, setDate] = useState(isoToFR(vente.date))
+  const [indice, setIndice] = useState(vente.indice)
+  const [nbParts, setNbParts] = useState(String(vente.nb_parts))
+  const [prixVente, setPrixVente] = useState(String(vente.prix_vente))
+  const [frais, setFrais] = useState(String(vente.frais))
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const montantOriginal = Number(vente.nb_parts) * Number(vente.prix_vente) - Number(vente.frais)
+  const montantNouveau = Number(nbParts) * Number(prixVente) - Number(frais || 0)
+
+  async function handleSave() {
+    setError('')
+    const isoDate = parseDateFR(date)
+    if (!isoDate) { setError('Date invalide — format JJ/MM/AAAA'); return }
+    setLoading(true)
+    const { error: err } = await supabase.from('ventes').update({
+      date: isoDate, indice,
+      nb_parts: Number(nbParts), prix_vente: Number(prixVente), frais: Number(frais),
+    }).eq('id', vente.id)
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
+      <div className="w-full max-w-md rounded-card p-6 max-h-[90vh] overflow-y-auto" style={{ backgroundColor: '#0c0c24', ...B }}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-text-primary font-black text-base">Modifier la vente</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-xl leading-none">✕</button>
+        </div>
+
+        {/* Récap ligne actuelle */}
+        <div className="rounded-input px-4 py-3 mb-5" style={{ backgroundColor: '#07071a', ...B }}>
+          <p className={LABEL + ' mb-2'}>Valeurs actuelles</p>
+          <div className="flex items-center gap-2 mb-2">
+            <BadgeIndice text={vente.indice} />
+            <span className="font-mono text-xs" style={{ color: '#8bb8f0' }}>{new Date(vente.date + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div><p className={LABEL}>Parts vendues</p><p className="text-text-primary font-bold text-sm">{fmt(vente.nb_parts, 4)}</p></div>
+            <div><p className={LABEL}>Prix de vente</p><p className="text-text-primary font-bold text-sm">{fmt(vente.prix_vente, 4)} €</p></div>
+            <div><p className={LABEL}>Frais</p><p className="text-text-primary font-bold text-sm">{fmt(vente.frais)} €</p></div>
+            <div><p className={LABEL}>Montant récupéré</p><p className="text-text-primary font-bold text-sm">{fmt(montantOriginal)} €</p></div>
+            {vente.gain_euros != null && (
+              <div className="col-span-2">
+                <p className={LABEL}>Gain / Perte</p>
+                <p className="font-bold text-sm" style={{ color: gainColor(vente.gain_euros) }}>
+                  {vente.gain_euros >= 0 ? '+' : ''}{fmt(vente.gain_euros)} €
+                  {vente.gain_pct != null && <span className="text-xs ml-1">({vente.gain_pct >= 0 ? '+' : ''}{fmt(vente.gain_pct)} %)</span>}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Date</label>
+            <input type="text" value={date} onChange={e => setDate(e.target.value)} placeholder="JJ/MM/AAAA" className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Indice</label>
+            <input list="edit-vente-actifs" value={indice} onChange={e => setIndice(e.target.value.toUpperCase())} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+            <datalist id="edit-vente-actifs">{actifsTickers.map(t => <option key={t} value={t} />)}</datalist>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Parts</label>
+              <input type="number" step="0.0001" value={nbParts} onChange={e => setNbParts(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Prix vente (€)</label>
+              <input type="number" step="0.0001" value={prixVente} onChange={e => setPrixVente(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className={LABEL}>Frais (€)</label>
+              <input type="number" step="0.01" value={frais} onChange={e => setFrais(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+            </div>
+          </div>
+          <div className="rounded-input px-4 py-2.5" style={{ backgroundColor: '#07071a', ...B }}>
+            <p className={LABEL}>Nouveau montant récupéré</p>
+            <p className="text-text-primary font-bold mt-1">{fmt(montantNouveau)} €</p>
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-center mt-3" style={{ color: '#a04a4a' }}>{error}</p>}
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 rounded-input py-3 text-sm font-bold" style={{ ...B, color: '#5a9aee', backgroundColor: 'transparent' }}>Annuler</button>
+          <button onClick={handleSave} disabled={loading} className="flex-1 rounded-input py-3 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#3a7bd5' }}>
+            {loading ? 'Enregistrement…' : 'Sauvegarder'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Ventes() {
   const [ventes, setVentes] = useState([])
   const [actifs, setActifs] = useState([])
   const [ordresOuverts, setOrdresOuverts] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [editRow, setEditRow] = useState(null)
+  const [editVente, setEditVente] = useState(null)
   const [menuOpen, setMenuOpen] = useState(null)
 
   async function fetchData() {
@@ -256,22 +339,6 @@ export default function Ventes() {
   }
 
   useEffect(() => { fetchData() }, [])
-
-  function startEditRow(v) {
-    setEditRow({ id: v.id, date: isoToFR(v.date), indice: v.indice, nb_parts: String(v.nb_parts), prix_vente: String(v.prix_vente), frais: String(v.frais) })
-  }
-
-  async function saveEditRow() {
-    if (!editRow) return
-    const isoDate = parseDateFR(editRow.date)
-    if (!isoDate) { alert('Date invalide — format JJ/MM/AAAA'); return }
-    await supabase.from('ventes').update({
-      date: isoDate, indice: editRow.indice,
-      nb_parts: Number(editRow.nb_parts), prix_vente: Number(editRow.prix_vente), frais: Number(editRow.frais),
-    }).eq('id', editRow.id)
-    setEditRow(null)
-    fetchData()
-  }
 
   async function deleteVente(id) {
     if (!window.confirm('Supprimer cette ligne ?')) return
@@ -317,51 +384,12 @@ export default function Ventes() {
               <YearSepCard year={year} />
               {items.map(v => {
                 const { produit, gain, pct } = getGainDisplay(v)
-                const isEditing = editRow?.id === v.id
-
-                if (isEditing) {
-                  return (
-                    <div key={v.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', border: '1px solid #3a7bd5' }}>
-                      <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-3">Modifier la vente</p>
-                      <div className="flex flex-col gap-3">
-                        <div>
-                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Date</p>
-                          <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT }} />
-                        </div>
-                        <div>
-                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Indice</p>
-                          <input list="mob-ventes-actifs" value={editRow.indice} onChange={e => setEditRow({ ...editRow, indice: e.target.value })} style={{ ...EDIT_INPUT }} className="uppercase" />
-                          <datalist id="mob-ventes-actifs">{actifsTickers.map(t => <option key={t} value={t} />)}</datalist>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div>
-                            <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Parts</p>
-                            <input type="number" value={editRow.nb_parts} onChange={e => setEditRow({ ...editRow, nb_parts: e.target.value })} style={{ ...EDIT_INPUT }} />
-                          </div>
-                          <div>
-                            <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Prix vente</p>
-                            <input type="number" value={editRow.prix_vente} onChange={e => setEditRow({ ...editRow, prix_vente: e.target.value })} style={{ ...EDIT_INPUT }} />
-                          </div>
-                          <div>
-                            <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Frais</p>
-                            <input type="number" value={editRow.frais} onChange={e => setEditRow({ ...editRow, frais: e.target.value })} style={{ ...EDIT_INPUT }} />
-                          </div>
-                        </div>
-                        <div className="flex gap-2 mt-1">
-                          <button onClick={saveEditRow} className="flex-1 rounded-input py-2 text-sm font-bold text-white" style={{ backgroundColor: '#2a9a5a' }}>✓ Sauvegarder</button>
-                          <button onClick={() => setEditRow(null)} className="flex-1 rounded-input py-2 text-sm font-bold" style={{ ...B, color: '#a04a4a', backgroundColor: 'transparent' }}>✗ Annuler</button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                }
-
                 return (
                   <div key={v.id} className="rounded-card p-4 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
                     <div className="flex items-center justify-between mb-3">
                       <BadgeIndice text={v.indice} />
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600 }}>{new Date(v.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="font-mono font-semibold" style={{ color: '#8bb8f0', fontWeight: 600 }}>{new Date(v.date + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
                         <div style={{ position: 'relative' }}>
                           <button
                             onClick={() => setMenuOpen(menuOpen === v.id ? null : v.id)}
@@ -369,7 +397,7 @@ export default function Ventes() {
                           >···</button>
                           {menuOpen === v.id && (
                             <div style={MENU}>
-                              <button style={MENU_EDIT} onClick={() => { startEditRow(v); setMenuOpen(null) }}>Modifier</button>
+                              <button style={MENU_EDIT} onClick={() => { setEditVente(v); setMenuOpen(null) }}>Modifier</button>
                               <button style={MENU_DEL} onClick={() => { setMenuOpen(null); deleteVente(v.id) }}>Supprimer</button>
                             </div>
                           )}
@@ -408,8 +436,8 @@ export default function Ventes() {
               <p className="text-text-muted text-sm">Aucune vente enregistrée</p>
             </div>
           ) : (
-            <div className="rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B, maxWidth: 1100 }}>
-              <table className="w-full" style={{ fontSize: 13 }}>
+            <div style={{ backgroundColor: '#0c0c24', ...B, borderRadius: 12, maxWidth: 1100, overflowX: 'auto' }}>
+              <table className="w-full" style={{ fontSize: 13, minWidth: 700 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Date', 'Indice', 'Parts', 'Prix vente', 'Frais', 'Montant récupéré', 'Gain €', 'Gain %', ''].map(h => (
@@ -423,43 +451,9 @@ export default function Ventes() {
                       <YearSepRow key={`sep-${year}`} colSpan={9} year={year} />
                       {items.map((v, i) => {
                         const { produit, gain, pct } = getGainDisplay(v)
-                        const isEditing = editRow?.id === v.id
-
-                        if (isEditing) {
-                          return (
-                            <tr key={v.id} style={{ backgroundColor: 'rgba(58,123,213,0.07)', borderBottom: '1px solid rgba(58,123,213,0.2)' }}>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT, minWidth: 80 }} />
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input list="desk-ventes-actifs" value={editRow.indice} onChange={e => setEditRow({ ...editRow, indice: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 65 }} className="uppercase" />
-                                <datalist id="desk-ventes-actifs">{actifsTickers.map(t => <option key={t} value={t} />)}</datalist>
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input type="number" value={editRow.nb_parts} onChange={e => setEditRow({ ...editRow, nb_parts: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 60 }} />
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input type="number" value={editRow.prix_vente} onChange={e => setEditRow({ ...editRow, prix_vente: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 65 }} />
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input type="number" value={editRow.frais} onChange={e => setEditRow({ ...editRow, frais: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 50 }} />
-                              </td>
-                              <td style={{ padding: '8px 12px', color: '#3a5080' }}>—</td>
-                              <td style={{ padding: '8px 12px', color: '#3a5080' }}>—</td>
-                              <td style={{ padding: '8px 12px', color: '#3a5080' }}>—</td>
-                              <td style={{ padding: '8px 8px' }}>
-                                <div className="flex items-center gap-1 justify-end">
-                                  <button onClick={saveEditRow} style={{ background: '#2a9a5a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✓</button>
-                                  <button onClick={() => setEditRow(null)} style={{ background: '#a04a4a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✗</button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        }
-
                         return (
                           <tr key={v.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                            <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#8bb8f0', fontSize: 12 }}>{new Date(v.date).toLocaleDateString('fr-FR')}</td>
+                            <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#8bb8f0', fontSize: 12 }}>{new Date(v.date + 'T00:00:00').toLocaleDateString('fr-FR')}</td>
                             <td style={{ padding: '10px 12px' }}><BadgeIndice text={v.indice} /></td>
                             <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{fmt(v.nb_parts, 4)}</td>
                             <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)' }}>{fmt(v.prix_vente, 4)} €</td>
@@ -471,10 +465,10 @@ export default function Ventes() {
                             <td style={{ padding: '10px 12px', fontWeight: 700, color: pct !== null ? gainColor(pct) : '#3a5080' }}>
                               {pct !== null ? (pct >= 0 ? '+' : '') + fmt(pct) + ' %' : '—'}
                             </td>
-                            <td style={{ padding: '10px 8px' }}>
+                            <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
                               <div className="flex items-center justify-end gap-1">
-                                <button onClick={() => startEditRow(v)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Modifier</button>
-                                <button onClick={() => deleteVente(v.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Supprimer</button>
+                                <button onClick={() => setEditVente(v)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Modifier</button>
+                                <button onClick={() => deleteVente(v.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Supprimer</button>
                               </div>
                             </td>
                           </tr>
@@ -494,7 +488,10 @@ export default function Ventes() {
       </div>
 
       {showModal && (
-        <Modal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchData() }} ordresOuverts={ordresOuverts} />
+        <AddModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchData() }} ordresOuverts={ordresOuverts} />
+      )}
+      {editVente && (
+        <EditVenteModal vente={editVente} onClose={() => setEditVente(null)} onSaved={() => { setEditVente(null); fetchData() }} actifsTickers={actifsTickers} />
       )}
     </PageWrapper>
   )

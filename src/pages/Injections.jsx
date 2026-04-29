@@ -8,7 +8,6 @@ const BADGE_DIVIDENDE = { borderRadius: '6px', padding: '2px 8px', fontSize: '10
 const BADGE_REMBOURSEMENT = { borderRadius: '6px', padding: '2px 8px', fontSize: '10px', fontWeight: 700, background: 'rgba(42,154,90,0.12)', border: '1px solid #2a9a5a', color: '#2a9a5a' }
 const INPUT = 'w-full rounded-input px-3 py-3 text-text-primary text-sm outline-none transition-colors bg-bg-input'
 const LABEL = 'font-mono uppercase text-[9px] tracking-[2px] text-text-muted'
-const EDIT_INPUT = { borderBottom: '1px solid #3a7bd5', background: 'transparent', outline: 'none', color: '#e8eaf0', fontSize: '0.8125rem', width: '100%' }
 const MENU = { position: 'absolute', right: 0, top: '110%', zIndex: 20, background: '#0c1a3a', border: '1px solid #2a4a8a', borderRadius: 8, padding: '4px 0', minWidth: 130, boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }
 const MENU_EDIT = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#3a7bd5', fontSize: 13, fontWeight: 600 }
 const MENU_DEL = { display: 'block', width: '100%', padding: '9px 14px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: '#a04a4a', fontSize: 13, fontWeight: 600 }
@@ -69,22 +68,6 @@ function YearSepCard({ year }) {
   )
 }
 
-const TrashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6l-1 14H6L5 6" />
-    <path d="M10 11v6M14 11v6" />
-    <path d="M9 6V4h6v2" />
-  </svg>
-)
-
-const PencilIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-)
-
 function TypeBadge({ type }) {
   const t = type || 'versement'
   if (t === 'dividende') return <span style={BADGE_DIVIDENDE}>Dividende</span>
@@ -92,7 +75,7 @@ function TypeBadge({ type }) {
   return <span style={BADGE_VERSEMENT}>Versement</span>
 }
 
-function Modal({ onClose, onSaved }) {
+function AddModal({ onClose, onSaved }) {
   const [date, setDate] = useState(todayFR())
   const [montant, setMontant] = useState('')
   const [note, setNote] = useState('')
@@ -156,11 +139,86 @@ function Modal({ onClose, onSaved }) {
   )
 }
 
+function EditInjectionModal({ inj, onClose, onSaved }) {
+  const [date, setDate] = useState(isoToFR(inj.date))
+  const [montant, setMontant] = useState(String(inj.montant))
+  const [note, setNote] = useState(inj.note || '')
+  const [type, setType] = useState(inj.type || 'versement')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSave() {
+    setError('')
+    const isoDate = parseDateFR(date)
+    if (!isoDate) { setError('Date invalide — format JJ/MM/AAAA'); return }
+    setLoading(true)
+    const { error: err } = await supabase.from('injections').update({
+      date: isoDate, montant: Number(montant), note: note.trim() || null, type,
+    }).eq('id', inj.id)
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    onSaved()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
+      <div className="w-full max-w-md rounded-card p-6" style={{ backgroundColor: '#0c0c24', ...B }}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-text-primary font-black text-base">Modifier l'injection</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-xl leading-none">✕</button>
+        </div>
+
+        {/* Récap ligne actuelle */}
+        <div className="rounded-input px-4 py-3 mb-5" style={{ backgroundColor: '#07071a', ...B }}>
+          <p className={LABEL + ' mb-2'}>Valeurs actuelles</p>
+          <div className="flex items-center gap-3 mb-1">
+            <TypeBadge type={inj.type} />
+            <span className="font-mono text-xs" style={{ color: '#8bb8f0' }}>{new Date(inj.date + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
+          </div>
+          <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
+          {inj.note && <p className="text-text-muted text-xs mt-1">{inj.note}</p>}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Date</label>
+            <input type="text" value={date} onChange={e => setDate(e.target.value)} placeholder="JJ/MM/AAAA" className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Montant (€)</label>
+            <input type="number" step="0.01" value={montant} onChange={e => setMontant(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Note</label>
+            <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="ex: virement mensuel" className={INPUT} style={{ ...B, backgroundColor: '#07071a' }} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={LABEL}>Type</label>
+            <select value={type} onChange={e => setType(e.target.value)} className={INPUT} style={{ ...B, backgroundColor: '#07071a' }}>
+              <option value="versement">Versement</option>
+              <option value="dividende">Dividende</option>
+              <option value="remboursement">Remboursement</option>
+            </select>
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-center mt-3" style={{ color: '#a04a4a' }}>{error}</p>}
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 rounded-input py-3 text-sm font-bold" style={{ ...B, color: '#5a9aee', backgroundColor: 'transparent' }}>Annuler</button>
+          <button onClick={handleSave} disabled={loading} className="flex-1 rounded-input py-3 text-sm font-bold text-white disabled:opacity-50" style={{ backgroundColor: '#3a7bd5' }}>
+            {loading ? 'Enregistrement…' : 'Sauvegarder'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Injections() {
   const [injections, setInjections] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [editRow, setEditRow] = useState(null)
+  const [editInj, setEditInj] = useState(null)
   const [menuOpen, setMenuOpen] = useState(null)
 
   async function fetchInjections() {
@@ -171,21 +229,6 @@ export default function Injections() {
   }
 
   useEffect(() => { fetchInjections() }, [])
-
-  function startEditRow(inj) {
-    setEditRow({ id: inj.id, date: isoToFR(inj.date), montant: String(inj.montant), note: inj.note || '', type: inj.type || 'versement' })
-  }
-
-  async function saveEditRow() {
-    if (!editRow) return
-    const isoDate = parseDateFR(editRow.date)
-    if (!isoDate) { alert('Date invalide — format JJ/MM/AAAA'); return }
-    await supabase.from('injections').update({
-      date: isoDate, montant: Number(editRow.montant), note: editRow.note.trim() || null, type: editRow.type,
-    }).eq('id', editRow.id)
-    setEditRow(null)
-    fetchInjections()
-  }
 
   async function deleteInjection(id) {
     if (!window.confirm('Supprimer cette ligne ?')) return
@@ -217,7 +260,6 @@ export default function Injections() {
           </div>
         )}
 
-        {/* Overlay ferme le menu contextuel mobile */}
         {menuOpen && <div onClick={() => setMenuOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />}
 
         {/* Mobile : liste cartes */}
@@ -233,66 +275,30 @@ export default function Injections() {
               {groups.map(({ year, items }) => (
                 <div key={year}>
                   <YearSepCard year={year} />
-                  {items.map(inj => {
-                    const isEditing = editRow?.id === inj.id
-                    if (isEditing) {
-                      return (
-                        <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', border: '1px solid #3a7bd5' }}>
-                          <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-3">Modifier</p>
-                          <div className="flex flex-col gap-3">
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Date</p>
-                              <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT }} />
-                            </div>
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Montant (€)</p>
-                              <input type="number" value={editRow.montant} onChange={e => setEditRow({ ...editRow, montant: e.target.value })} style={{ ...EDIT_INPUT }} />
-                            </div>
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Note</p>
-                              <input value={editRow.note} onChange={e => setEditRow({ ...editRow, note: e.target.value })} style={{ ...EDIT_INPUT }} />
-                            </div>
-                            <div>
-                              <p className="font-mono text-[9px] uppercase tracking-widest text-text-muted mb-1">Type</p>
-                              <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, paddingRight: 4 }}>
-                                <option value="versement">Versement</option>
-                                <option value="dividende">Dividende</option>
-                                <option value="remboursement">Remboursement</option>
-                              </select>
-                            </div>
-                            <div className="flex gap-2 mt-1">
-                              <button onClick={saveEditRow} className="flex-1 rounded-input py-2 text-sm font-bold text-white" style={{ backgroundColor: '#2a9a5a' }}>✓ Sauvegarder</button>
-                              <button onClick={() => setEditRow(null)} className="flex-1 rounded-input py-2 text-sm font-bold" style={{ ...B, color: '#a04a4a', backgroundColor: 'transparent' }}>✗ Annuler</button>
-                            </div>
+                  {items.map(inj => (
+                    <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <TypeBadge type={inj.type} />
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date + 'T00:00:00').toLocaleDateString('fr-FR')}</span>
+                          <div style={{ position: 'relative' }}>
+                            <button
+                              onClick={() => setMenuOpen(menuOpen === inj.id ? null : inj.id)}
+                              style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, cursor: 'pointer', padding: '2px 8px', color: '#8899bb', fontSize: 15, fontWeight: 700, lineHeight: 1 }}
+                            >···</button>
+                            {menuOpen === inj.id && (
+                              <div style={MENU}>
+                                <button style={MENU_EDIT} onClick={() => { setEditInj(inj); setMenuOpen(null) }}>Modifier</button>
+                                <button style={MENU_DEL} onClick={() => { setMenuOpen(null); deleteInjection(inj.id) }}>Supprimer</button>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )
-                    }
-                    return (
-                      <div key={inj.id} className="rounded-card px-4 py-3 mb-3" style={{ backgroundColor: '#0c0c24', ...B }}>
-                        <div className="flex items-center justify-between mb-2">
-                          <TypeBadge type={inj.type} />
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-semibold" style={{ color: '#8bb8f0' }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</span>
-                            <div style={{ position: 'relative' }}>
-                              <button
-                                onClick={() => setMenuOpen(menuOpen === inj.id ? null : inj.id)}
-                                style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, cursor: 'pointer', padding: '2px 8px', color: '#8899bb', fontSize: 15, fontWeight: 700, lineHeight: 1 }}
-                              >···</button>
-                              {menuOpen === inj.id && (
-                                <div style={MENU}>
-                                  <button style={MENU_EDIT} onClick={() => { startEditRow(inj); setMenuOpen(null) }}>Modifier</button>
-                                  <button style={MENU_DEL} onClick={() => { setMenuOpen(null); deleteInjection(inj.id) }}>Supprimer</button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
-                        {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
                       </div>
-                    )
-                  })}
+                      <p className="text-text-primary font-bold">{fmt(inj.montant)}</p>
+                      {inj.note && <p className="text-text-muted text-xs mt-0.5">{inj.note}</p>}
+                    </div>
+                  ))}
                 </div>
               ))}
               <div className="rounded-card px-4 py-3 flex items-center justify-between mt-1" style={{ backgroundColor: '#0c0c24', ...B }}>
@@ -312,8 +318,8 @@ export default function Injections() {
               <p className="text-text-muted text-sm">Aucune injection enregistrée</p>
             </div>
           ) : (
-            <div className="rounded-card overflow-hidden" style={{ backgroundColor: '#0c0c24', ...B, maxWidth: 1100 }}>
-              <table className="w-full" style={{ fontSize: 13 }}>
+            <div style={{ backgroundColor: '#0c0c24', ...B, borderRadius: 12, maxWidth: 1100, overflowX: 'auto' }}>
+              <table className="w-full" style={{ fontSize: 13, minWidth: 500 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
                     {['Date', 'Type', 'Montant', 'Note', ''].map(h => (
@@ -325,51 +331,20 @@ export default function Injections() {
                   {groups.map(({ year, items }) => (
                     <>
                       <YearSepRow key={`sep-${year}`} colSpan={5} year={year} />
-                      {items.map((inj, i) => {
-                        const isEditing = editRow?.id === inj.id
-                        if (isEditing) {
-                          return (
-                            <tr key={inj.id} style={{ backgroundColor: 'rgba(58,123,213,0.07)', borderBottom: '1px solid rgba(58,123,213,0.2)' }}>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input value={editRow.date} onChange={e => setEditRow({ ...editRow, date: e.target.value })} placeholder="JJ/MM/AAAA" style={{ ...EDIT_INPUT, minWidth: 80 }} />
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <select value={editRow.type} onChange={e => setEditRow({ ...editRow, type: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 110 }}>
-                                  <option value="versement">Versement</option>
-                                  <option value="dividende">Dividende</option>
-                                  <option value="remboursement">Remboursement</option>
-                                </select>
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input type="number" value={editRow.montant} onChange={e => setEditRow({ ...editRow, montant: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 80 }} />
-                              </td>
-                              <td style={{ padding: '8px 12px' }}>
-                                <input value={editRow.note} onChange={e => setEditRow({ ...editRow, note: e.target.value })} style={{ ...EDIT_INPUT, minWidth: 100 }} />
-                              </td>
-                              <td style={{ padding: '8px 8px' }}>
-                                <div className="flex items-center gap-1 justify-end">
-                                  <button onClick={saveEditRow} style={{ background: '#2a9a5a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✓</button>
-                                  <button onClick={() => setEditRow(null)} style={{ background: '#a04a4a', border: 'none', borderRadius: 4, color: 'white', cursor: 'pointer', padding: '2px 7px', fontSize: 12, fontWeight: 700 }}>✗</button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        }
-                        return (
-                          <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                            <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#8bb8f0', fontSize: 12 }}>{new Date(inj.date).toLocaleDateString('fr-FR')}</td>
-                            <td style={{ padding: '10px 12px' }}><TypeBadge type={inj.type} /></td>
-                            <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>{fmt(inj.montant)}</td>
-                            <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)', fontSize: 12 }}>{inj.note || '—'}</td>
-                            <td style={{ padding: '10px 8px' }}>
-                              <div className="flex items-center justify-end gap-1">
-                                <button onClick={() => startEditRow(inj)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Modifier</button>
-                                <button onClick={() => deleteInjection(inj.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer' }}>Supprimer</button>
-                              </div>
-                            </td>
-                          </tr>
-                        )
-                      })}
+                      {items.map((inj, i) => (
+                        <tr key={inj.id} style={{ borderBottom: i < items.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                          <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: '#8bb8f0', fontSize: 12 }}>{new Date(inj.date + 'T00:00:00').toLocaleDateString('fr-FR')}</td>
+                          <td style={{ padding: '10px 12px' }}><TypeBadge type={inj.type} /></td>
+                          <td style={{ padding: '10px 12px', color: 'var(--color-text-primary)', fontWeight: 700 }}>{fmt(inj.montant)}</td>
+                          <td style={{ padding: '10px 12px', color: 'var(--color-text-muted)', fontSize: 12 }}>{inj.note || '—'}</td>
+                          <td style={{ padding: '10px 8px', whiteSpace: 'nowrap' }}>
+                            <div className="flex items-center justify-end gap-1">
+                              <button onClick={() => setEditInj(inj)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Modifier</button>
+                              <button onClick={() => deleteInjection(inj.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '20px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>Supprimer</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
                     </>
                   ))}
                 </tbody>
@@ -383,7 +358,8 @@ export default function Injections() {
         <button onClick={() => setShowModal(true)} className="pointer-events-auto w-14 h-14 rounded-full flex items-center justify-center text-white text-2xl" style={{ backgroundColor: '#3a7bd5' }}>+</button>
       </div>
 
-      {showModal && <Modal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchInjections() }} />}
+      {showModal && <AddModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchInjections() }} />}
+      {editInj && <EditInjectionModal inj={editInj} onClose={() => setEditInj(null)} onSaved={() => { setEditInj(null); fetchInjections() }} />}
     </PageWrapper>
   )
 }
