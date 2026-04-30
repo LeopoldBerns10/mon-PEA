@@ -109,6 +109,7 @@ export default function FinanceMois() {
           nom: f.nom,
           montant_prevu: f.montant,
           paye: false,
+          jour_prelevement: f.jour_prelevement || 1,
         }))
       )
     }

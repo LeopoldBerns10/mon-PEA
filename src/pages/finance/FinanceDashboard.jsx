@@ -32,9 +32,7 @@ export default function FinanceDashboard() {
   const [showDepenseModal, setShowDepenseModal] = useState(false)
   const [newDep, setNewDep] = useState({ label: '', montant: '', categorie: 'autre' })
 
-  useEffect(() => {
-    fetchMois()
-  }, [])
+  useEffect(() => { fetchMois() }, [])
 
   useEffect(() => {
     if (moisList.length > 0) fetchData(moisList[currentIdx].id)
@@ -67,12 +65,39 @@ export default function FinanceDashboard() {
   }
 
   const mois = moisList[currentIdx]
+  const today = new Date()
+
   const totalRevenus = data.revenus.reduce((s, r) => s + Number(r.montant), 0)
   const totalFactures = data.factures.reduce((s, f) => s + Number(f.montant_reel ?? f.montant_prevu ?? 0), 0)
   const totalDepenses = data.depenses.reduce((s, d) => s + Number(d.montant), 0)
   const totalVersements = data.versements.reduce((s, v) => s + Number(v.montant), 0)
-  const resteDisponible = totalRevenus - totalFactures - totalDepenses
-  const soldeFinal = resteDisponible - totalVersements
+
+  // Déterminer si le mois affiché est courant, passé ou futur
+  const moisDate = mois ? new Date(mois.mois) : null
+  const debutMoisCourant = new Date(today.getFullYear(), today.getMonth(), 1)
+  const debutMoisAffiche = moisDate ? new Date(moisDate.getFullYear(), moisDate.getMonth(), 1) : null
+  const isCurrentMonth = debutMoisAffiche && debutMoisAffiche.getTime() === debutMoisCourant.getTime()
+  const isPastMonth = debutMoisAffiche && debutMoisAffiche < debutMoisCourant
+
+  // Factures déjà déduites du compte (selon le jour de prélèvement)
+  const facturesDeduites = data.factures.reduce((s, f) => {
+    const montant = Number(f.montant_reel ?? f.montant_prevu ?? 0)
+    if (isPastMonth) return s + montant              // mois passé : tout est prélevé
+    if (!isCurrentMonth) return s                    // mois futur : rien encore prélevé
+    // mois courant : prélevé si le jour est passé OU si marqué payé
+    const jourPrelev = f.jour_prelevement || 1
+    return (jourPrelev <= today.getDate() || f.paye) ? s + montant : s
+  }, 0)
+
+  // Factures encore à venir ce mois (pas encore sur le compte)
+  const facturesAVenir = totalFactures - facturesDeduites
+
+  // Ce qui est sur le compte maintenant
+  const soldeSurCompte = totalRevenus - totalDepenses - facturesDeduites
+  // Ce qu'il restera après toutes les factures
+  const soldeApresFactures = totalRevenus - totalDepenses - totalFactures
+  // Après versements en plus
+  const soldeFinal = soldeApresFactures - totalVersements
 
   const depParCategorie = CATEGORIES.map(cat => ({
     name: cat.emoji + ' ' + cat.label,
@@ -114,7 +139,7 @@ export default function FinanceDashboard() {
             disabled={currentIdx >= moisList.length - 1}
             style={{ background: 'none', border: 'none', color: currentIdx >= moisList.length - 1 ? '#1a1a3a' : '#3a7bd5', fontSize: 22, cursor: 'pointer', padding: '8px' }}
           >←</button>
-          <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 16 }}>
+          <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 16, textTransform: 'capitalize' }}>
             {mois ? getMoisLabel(mois.mois) : 'Aucun mois'}
           </div>
           <button
@@ -138,23 +163,46 @@ export default function FinanceDashboard() {
           </div>
         ) : (
           <>
-            {/* Carte hero */}
+            {/* === CARTE DOUBLE SOLDE === */}
             <div style={{
               background: '#0c0c24',
-              border: `1px solid ${resteDisponible >= 0 ? 'rgba(42,154,90,0.3)' : 'rgba(160,74,74,0.3)'}`,
+              border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: 16,
-              padding: '24px 20px',
-              textAlign: 'center',
+              overflow: 'hidden',
               marginBottom: 16,
             }}>
-              <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8 }}>
-                Reste disponible ce mois
+              {/* Bloc 1 : Sur le compte maintenant */}
+              <div style={{
+                padding: '20px 20px 16px',
+                borderBottom: '1px solid rgba(255,255,255,0.06)',
+                background: soldeSurCompte >= 0 ? 'rgba(42,154,90,0.05)' : 'rgba(160,74,74,0.05)',
+              }}>
+                <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 }}>
+                  💳 Sur mon compte maintenant
+                </div>
+                <div style={{ color: soldeSurCompte >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 34, fontWeight: 800, letterSpacing: -1 }}>
+                  {soldeSurCompte >= 0 ? '+' : ''}{fmt(soldeSurCompte)} €
+                </div>
+                {isCurrentMonth && facturesAVenir > 0 && (
+                  <div style={{ color: '#3a5080', fontSize: 12, marginTop: 4 }}>
+                    {fmt(facturesAVenir)} € de factures encore à venir
+                  </div>
+                )}
               </div>
-              <div style={{ color: resteDisponible >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 36, fontWeight: 800, marginBottom: 4 }}>
-                {resteDisponible >= 0 ? '+' : ''}{fmt(resteDisponible)} €
-              </div>
-              <div style={{ color: '#3a5080', fontSize: 12 }}>
-                Après versements : {soldeFinal >= 0 ? '+' : ''}{fmt(soldeFinal)} €
+
+              {/* Bloc 2 : Après toutes les factures */}
+              <div style={{ padding: '16px 20px 20px' }}>
+                <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 }}>
+                  🔮 Après toutes les factures
+                </div>
+                <div style={{ color: soldeApresFactures >= 0 ? '#c8e0ff' : '#a04a4a', fontSize: 24, fontWeight: 700 }}>
+                  {soldeApresFactures >= 0 ? '+' : ''}{fmt(soldeApresFactures)} €
+                </div>
+                {totalVersements > 0 && (
+                  <div style={{ color: '#3a5080', fontSize: 12, marginTop: 4 }}>
+                    Après versements : {soldeFinal >= 0 ? '+' : ''}{fmt(soldeFinal)} €
+                  </div>
+                )}
               </div>
             </div>
 
@@ -218,29 +266,17 @@ export default function FinanceDashboard() {
         <button
           onClick={() => setShowDepenseModal(true)}
           style={{
-            position: 'fixed',
-            bottom: 80,
-            right: 20,
-            width: 52,
-            height: 52,
-            borderRadius: '50%',
-            background: '#3a7bd5',
-            border: 'none',
-            color: '#fff',
-            fontSize: 24,
-            cursor: 'pointer',
-            zIndex: 100,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            position: 'fixed', bottom: 80, right: 20,
+            width: 52, height: 52, borderRadius: '50%',
+            background: '#3a7bd5', border: 'none', color: '#fff',
+            fontSize: 24, cursor: 'pointer', zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             boxShadow: '0 4px 16px rgba(58,123,213,0.4)',
           }}
-        >
-          +
-        </button>
+        >+</button>
       )}
 
-      {/* Modal ajout dépense rapide */}
+      {/* Modal dépense rapide */}
       {showDepenseModal && (
         <div
           onClick={() => setShowDepenseModal(false)}

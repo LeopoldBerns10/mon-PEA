@@ -6,6 +6,10 @@ function fmt(n) {
   return Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function ordinal(n) {
+  return n === 1 ? '1er' : `${n}`
+}
+
 const INPUT_STYLE = {
   width: '100%',
   background: '#060611',
@@ -18,10 +22,12 @@ const INPUT_STYLE = {
   boxSizing: 'border-box',
 }
 
+const JOURS = Array.from({ length: 31 }, (_, i) => i + 1)
+
 export default function FinanceFactures() {
   const [factures, setFactures] = useState([])
-  const [modal, setModal] = useState(null) // null | { mode: 'add' | 'edit', item? }
-  const [form, setForm] = useState({ nom: '', montant: '', categorie: 'facture', actif: true })
+  const [modal, setModal] = useState(null)
+  const [form, setForm] = useState({ nom: '', montant: '', categorie: 'facture', actif: true, jour_prelevement: 1 })
 
   useEffect(() => { fetchFactures() }, [])
 
@@ -31,37 +37,35 @@ export default function FinanceFactures() {
       .from('factures_fixes')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+      .order('jour_prelevement', { ascending: true })
     setFactures(data || [])
   }
 
   function openAdd() {
-    setForm({ nom: '', montant: '', categorie: 'facture', actif: true })
+    setForm({ nom: '', montant: '', categorie: 'facture', actif: true, jour_prelevement: 1 })
     setModal({ mode: 'add' })
   }
 
   function openEdit(item) {
-    setForm({ ...item })
+    setForm({ ...item, jour_prelevement: item.jour_prelevement || 1 })
     setModal({ mode: 'edit', item })
   }
 
   async function saveForm() {
     const { data: { user } } = await supabase.auth.getUser()
+    const payload = {
+      user_id: user.id,
+      nom: form.nom,
+      montant: parseFloat(form.montant),
+      categorie: form.categorie,
+      actif: form.actif,
+      jour_prelevement: parseInt(form.jour_prelevement) || 1,
+    }
     if (modal.mode === 'add') {
-      await supabase.from('factures_fixes').insert({
-        user_id: user.id,
-        nom: form.nom,
-        montant: parseFloat(form.montant),
-        categorie: form.categorie,
-        actif: form.actif,
-      })
+      await supabase.from('factures_fixes').insert(payload)
     } else {
-      await supabase.from('factures_fixes').update({
-        nom: form.nom,
-        montant: parseFloat(form.montant),
-        categorie: form.categorie,
-        actif: form.actif,
-      }).eq('id', modal.item.id)
+      const { user_id, ...update } = payload
+      await supabase.from('factures_fixes').update(update).eq('id', modal.item.id)
     }
     setModal(null)
     fetchFactures()
@@ -83,7 +87,6 @@ export default function FinanceFactures() {
   return (
     <PageWrapper>
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px' }}>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 18 }}>Factures fixes</div>
           <button
@@ -94,7 +97,6 @@ export default function FinanceFactures() {
           </button>
         </div>
 
-        {/* Total actives */}
         <div style={{
           background: '#0c0c24',
           border: '1px solid rgba(255,255,255,0.08)',
@@ -110,13 +112,7 @@ export default function FinanceFactures() {
         </div>
 
         {factures.length === 0 ? (
-          <div style={{
-            background: '#0c0c24',
-            border: '1px dashed #1a1a3a',
-            borderRadius: 12,
-            padding: '32px 20px',
-            textAlign: 'center',
-          }}>
+          <div style={{ background: '#0c0c24', border: '1px dashed #1a1a3a', borderRadius: 12, padding: '32px 20px', textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
             <div style={{ color: '#c8e0ff', fontWeight: 700, marginBottom: 8 }}>Aucune facture fixe</div>
             <div style={{ color: '#3a5080', fontSize: 13 }}>Ajoute tes charges récurrentes (loyer, abonnements...)</div>
@@ -138,37 +134,32 @@ export default function FinanceFactures() {
                 <button
                   onClick={() => toggleActif(f)}
                   style={{
-                    width: 36,
-                    height: 20,
-                    borderRadius: 10,
+                    width: 36, height: 20, borderRadius: 10,
                     background: f.actif ? '#3a7bd5' : '#1a1a3a',
-                    border: 'none',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    flexShrink: 0,
-                    transition: 'background 0.2s',
+                    border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0,
                   }}
                 >
                   <span style={{
-                    position: 'absolute',
-                    top: 2,
+                    position: 'absolute', top: 2,
                     left: f.actif ? 18 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    transition: 'left 0.2s',
+                    width: 16, height: 16, borderRadius: '50%', background: '#fff',
                   }} />
                 </button>
 
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: '#c8e0ff', fontWeight: 600, fontSize: 14 }}>{f.nom}</div>
-                  <div style={{ color: '#3a5080', fontSize: 12 }}>{f.categorie}</div>
+                  <div style={{ color: '#3a5080', fontSize: 12 }}>
+                    {f.categorie}
+                    {f.jour_prelevement
+                      ? <span style={{ color: '#5a9aee', marginLeft: 6 }}>· prélevé le {ordinal(f.jour_prelevement)}</span>
+                      : null
+                    }
+                  </div>
                 </div>
 
-                <div style={{ color: '#f0c040', fontWeight: 700, fontSize: 15 }}>{fmt(f.montant)} €</div>
+                <div style={{ color: '#f0c040', fontWeight: 700, fontSize: 15, flexShrink: 0 }}>{fmt(f.montant)} €</div>
 
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => openEdit(f)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '999px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Modifier</button>
                   <button onClick={() => deleteFacture(f.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '999px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Supprimer</button>
                 </div>
@@ -186,7 +177,7 @@ export default function FinanceFactures() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            style={{ background: '#0c0c24', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxWidth: 430 }}
+            style={{ background: '#0c0c24', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxWidth: 430, maxHeight: '90vh', overflowY: 'auto' }}
           >
             <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 16, marginBottom: 20 }}>
               {modal.mode === 'add' ? '+ Facture fixe' : 'Modifier la facture'}
@@ -210,32 +201,55 @@ export default function FinanceFactures() {
               onChange={e => setForm(f => ({ ...f, categorie: e.target.value }))}
               style={INPUT_STYLE}
             />
+
+            {/* Jour de prélèvement */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: '#3a5080', fontSize: 12, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>
+                Prélevé le {ordinal(form.jour_prelevement)} du mois
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+                {JOURS.map(j => (
+                  <button
+                    key={j}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, jour_prelevement: j }))}
+                    style={{
+                      background: form.jour_prelevement === j ? '#3a7bd5' : '#060611',
+                      border: `1px solid ${form.jour_prelevement === j ? '#3a7bd5' : '#1a1a3a'}`,
+                      color: form.jour_prelevement === j ? '#fff' : '#3a5080',
+                      borderRadius: 6,
+                      padding: '6px 2px',
+                      fontSize: 12,
+                      fontWeight: form.jour_prelevement === j ? 700 : 400,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {j}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Toggle actif */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <button
+                type="button"
                 onClick={() => setForm(f => ({ ...f, actif: !f.actif }))}
                 style={{
-                  width: 36,
-                  height: 20,
-                  borderRadius: 10,
+                  width: 36, height: 20, borderRadius: 10,
                   background: form.actif ? '#3a7bd5' : '#1a1a3a',
-                  border: 'none',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  flexShrink: 0,
+                  border: 'none', cursor: 'pointer', position: 'relative', flexShrink: 0,
                 }}
               >
                 <span style={{
-                  position: 'absolute',
-                  top: 2,
+                  position: 'absolute', top: 2,
                   left: form.actif ? 18 : 2,
-                  width: 16,
-                  height: 16,
-                  borderRadius: '50%',
-                  background: '#fff',
+                  width: 16, height: 16, borderRadius: '50%', background: '#fff',
                 }} />
               </button>
               <span style={{ color: '#c8e0ff', fontSize: 14 }}>{form.actif ? 'Active' : 'Inactive'}</span>
             </div>
+
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => setModal(null)} style={{ flex: 1, background: '#1a1a3a', border: 'none', borderRadius: 8, padding: '12px', color: '#3a5080', fontSize: 14, cursor: 'pointer' }}>
                 Annuler

@@ -261,6 +261,7 @@ export default function FinanceMoisDetail() {
                 <div style={{ color: '#3a5080', fontSize: 12 }}>
                   Prévu {fmt(f.montant_prevu)} €
                   {f.montant_reel != null ? ` · Réel ${fmt(f.montant_reel)} €` : ''}
+                  {f.jour_prelevement ? <span style={{ color: '#5a9aee' }}> · le {f.jour_prelevement === 1 ? '1er' : f.jour_prelevement}</span> : null}
                 </div>
               </div>
               {!cloture && <BoutonActions onEdit={() => openEdit('facture', f)} onDelete={() => deleteItem('facture', f.id)} />}
