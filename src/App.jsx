@@ -7,6 +7,11 @@ import Ordres from './pages/Ordres'
 import Injections from './pages/Injections'
 import Ventes from './pages/Ventes'
 import Actifs from './pages/Actifs'
+import FinanceDashboard from './pages/finance/FinanceDashboard'
+import FinanceMois from './pages/finance/FinanceMois'
+import FinanceMoisDetail from './pages/finance/FinanceMoisDetail'
+import FinanceFactures from './pages/finance/FinanceFactures'
+import FinancePlacements from './pages/finance/FinancePlacements'
 
 export default function App() {
   return (
@@ -20,6 +25,11 @@ export default function App() {
         <Route path="/injections" element={<ProtectedRoute><Injections /></ProtectedRoute>} />
         <Route path="/ventes" element={<ProtectedRoute><Ventes /></ProtectedRoute>} />
         <Route path="/actifs" element={<ProtectedRoute><Actifs /></ProtectedRoute>} />
+        <Route path="/finance" element={<ProtectedRoute><FinanceDashboard /></ProtectedRoute>} />
+        <Route path="/finance/mois" element={<ProtectedRoute><FinanceMois /></ProtectedRoute>} />
+        <Route path="/finance/mois/:id" element={<ProtectedRoute><FinanceMoisDetail /></ProtectedRoute>} />
+        <Route path="/finance/factures" element={<ProtectedRoute><FinanceFactures /></ProtectedRoute>} />
+        <Route path="/finance/placements" element={<ProtectedRoute><FinancePlacements /></ProtectedRoute>} />
       </Routes>
     </BrowserRouter>
   )
