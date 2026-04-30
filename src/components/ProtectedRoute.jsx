@@ -16,7 +16,8 @@ export default function ProtectedRoute({ children }) {
       }
 
       setUserEmail(session.user.email || '')
-      const { data: profile } = await getUserProfile(session.user.id)
+      const { data: profile, error } = await getUserProfile(session.user.id)
+      console.log('ProtectedRoute — user id:', session.user.id, '| profile:', profile, '| error:', error)
 
       if (!profile || profile.statut === 'pending') {
         // Notifier l'admin seulement à la première connexion (profil créé dans les 2 min)
