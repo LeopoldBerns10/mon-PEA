@@ -2,18 +2,33 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import PageWrapper from '../../components/PageWrapper'
-import { BarChart, Bar, XAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 
 const CATEGORIES = [
-  { id: 'nourriture',  label: 'Nourriture',  emoji: '🛒', color: '#3a7bd5' },
-  { id: 'essence',     label: 'Essence',      emoji: '⛽', color: '#f0c040' },
-  { id: 'loisirs',     label: 'Loisirs',      emoji: '🎮', color: '#8b5cf6' },
-  { id: 'restaurant',  label: 'Restaurant',   emoji: '🍔', color: '#f97316' },
-  { id: 'sante',       label: 'Santé',        emoji: '💊', color: '#2a9a5a' },
-  { id: 'vetements',   label: 'Vêtements',    emoji: '👕', color: '#ec4899' },
-  { id: 'transport',   label: 'Transport',    emoji: '🚗', color: '#06b6d4' },
-  { id: 'autre',       label: 'Autre',        emoji: '📦', color: '#3a5080' },
+  { id: 'nourriture',             label: 'Nourriture',               emoji: '🛒', color: '#3a7bd5' },
+  { id: 'essence',                label: 'Essence',                  emoji: '⛽', color: '#f0c040' },
+  { id: 'loisirs',                label: 'Loisirs',                  emoji: '🎮', color: '#8b5cf6' },
+  { id: 'restaurant',             label: 'Restaurant',               emoji: '🍔', color: '#f97316' },
+  { id: 'sante',                  label: 'Santé',                    emoji: '💊', color: '#2a9a5a' },
+  { id: 'vetements',              label: 'Vêtements',                emoji: '👕', color: '#ec4899' },
+  { id: 'transport',              label: 'Transport',                emoji: '🚗', color: '#06b6d4' },
+  { id: 'complement_alimentaire', label: 'Compléments alimentaires', emoji: '💪', color: '#84cc16' },
+  { id: 'jeux_video',             label: 'Jeux Vidéo',               emoji: '🕹️', color: '#a855f7' },
+  { id: 'sortie_bar',             label: 'Sorties Bar',              emoji: '🍺', color: '#f59e0b' },
+  { id: 'cigarette',              label: 'Cigarette électronique',   emoji: '💨', color: '#64748b' },
+  { id: 'autre',                  label: 'Autre',                    emoji: '📦', color: '#3a5080' },
 ]
+
+const INPUT_STYLE = {
+  width: '100%',
+  background: '#060611',
+  border: '1px solid #1a1a3a',
+  borderRadius: 8,
+  padding: '10px 12px',
+  color: '#c8e0ff',
+  fontSize: 14,
+  boxSizing: 'border-box',
+}
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -29,8 +44,8 @@ export default function FinanceDashboard() {
   const [currentIdx, setCurrentIdx] = useState(0)
   const [data, setData] = useState({ revenus: [], factures: [], depenses: [], versements: [] })
   const [loading, setLoading] = useState(true)
-  const [showDepenseModal, setShowDepenseModal] = useState(false)
-  const [newDep, setNewDep] = useState({ label: '', montant: '', categorie: 'autre' })
+  const [quickDep, setQuickDep] = useState({ label: '', montant: '', categorie: 'nourriture' })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => { fetchMois() }, [])
 
@@ -64,6 +79,23 @@ export default function FinanceDashboard() {
     })
   }
 
+  async function ajouterDepenseRapide() {
+    if (!quickDep.label || !quickDep.montant || !mois || mois.cloture) return
+    setSaving(true)
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('depenses').insert({
+      user_id: user.id,
+      mois_id: mois.id,
+      label: quickDep.label,
+      montant: parseFloat(quickDep.montant),
+      categorie: quickDep.categorie,
+      date: new Date().toISOString().split('T')[0],
+    })
+    setQuickDep({ label: '', montant: '', categorie: 'nourriture' })
+    setSaving(false)
+    fetchData(mois.id)
+  }
+
   const mois = moisList[currentIdx]
   const today = new Date()
 
@@ -72,36 +104,25 @@ export default function FinanceDashboard() {
   const totalDepenses = data.depenses.reduce((s, d) => s + Number(d.montant), 0)
   const totalVersements = data.versements.reduce((s, v) => s + Number(v.montant), 0)
 
-  // Factures payées (marquées paye=true) vs encore à prélever
   const facturesPayees = data.factures.reduce((s, f) =>
     f.paye ? s + Number(f.montant_reel ?? f.montant_prevu ?? 0) : s, 0)
   const facturesNonPayees = totalFactures - facturesPayees
-  // solde_actuel = revenus - factures_payees - dépenses - versements
   const soldeActuel = totalRevenus - facturesPayees - totalDepenses - totalVersements
-  // solde_final_estime = solde_actuel - factures_non_payees
   const soldeFinalEstime = soldeActuel - facturesNonPayees
 
-  const depParCategorie = CATEGORIES.map(cat => ({
-    name: cat.emoji + ' ' + cat.label,
-    montant: data.depenses.filter(d => d.categorie === cat.id).reduce((s, d) => s + Number(d.montant), 0),
-    color: cat.color,
-  })).filter(c => c.montant > 0)
+  const depensesParCategorie = CATEGORIES
+    .map(cat => ({
+      name: cat.label,
+      emoji: cat.emoji,
+      value: data.depenses.filter(d => d.categorie === cat.id).reduce((sum, d) => sum + Number(d.montant), 0),
+      color: cat.color,
+    }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value)
 
-  async function ajouterDepense() {
-    if (!newDep.label || !newDep.montant || !mois) return
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('depenses').insert({
-      user_id: user.id,
-      mois_id: mois.id,
-      label: newDep.label,
-      montant: parseFloat(newDep.montant),
-      categorie: newDep.categorie,
-      date: new Date().toISOString().split('T')[0],
-    })
-    setNewDep({ label: '', montant: '', categorie: 'autre' })
-    setShowDepenseModal(false)
-    fetchData(mois.id)
-  }
+  const totalDepCat = depensesParCategorie.reduce((s, d) => s + d.value, 0)
+
+  const moisActif = mois && !mois.cloture
 
   if (loading) {
     return (
@@ -171,12 +192,87 @@ export default function FinanceDashboard() {
               )}
             </div>
 
+            {/* === SAISIE RAPIDE DÉPENSE === */}
+            {moisActif ? (
+              <div style={{
+                background: '#0c0c24',
+                border: '1px solid #1a1a3a',
+                borderRadius: 12,
+                padding: 16,
+                marginBottom: 16,
+              }}>
+                <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>
+                  + Ajouter une dépense rapidement
+                </div>
+                <input
+                  placeholder="Description"
+                  value={quickDep.label}
+                  onChange={e => setQuickDep(d => ({ ...d, label: e.target.value }))}
+                  style={{ ...INPUT_STYLE, marginBottom: 8 }}
+                />
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <input
+                    placeholder="Montant €"
+                    type="number"
+                    value={quickDep.montant}
+                    onChange={e => setQuickDep(d => ({ ...d, montant: e.target.value }))}
+                    style={{ ...INPUT_STYLE, flex: 1 }}
+                  />
+                  <select
+                    value={quickDep.categorie}
+                    onChange={e => setQuickDep(d => ({ ...d, categorie: e.target.value }))}
+                    style={{ ...INPUT_STYLE, flex: 2 }}
+                  >
+                    {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+                  </select>
+                </div>
+                <button
+                  onClick={ajouterDepenseRapide}
+                  disabled={saving || !quickDep.label || !quickDep.montant}
+                  style={{
+                    width: '100%',
+                    background: '#3a7bd5',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '10px 20px',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    marginTop: 8,
+                    opacity: (saving || !quickDep.label || !quickDep.montant) ? 0.5 : 1,
+                  }}
+                >
+                  {saving ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
+              </div>
+            ) : (
+              <div style={{
+                background: '#0c0c24',
+                border: '1px solid #1a1a3a',
+                borderRadius: 12,
+                padding: '14px 16px',
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+                <span style={{ color: '#3a5080', fontSize: 13 }}>Mois clôturé — pas de saisie possible</span>
+                <button
+                  onClick={() => navigate('/finance/mois')}
+                  style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Gérer les mois →
+                </button>
+              </div>
+            )}
+
             {/* Grille 2×2 */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
               {[
-                { label: 'Revenus', value: totalRevenus, color: '#2a9a5a', emoji: '💶' },
-                { label: 'Factures', value: totalFactures, color: '#f0c040', emoji: '🧾' },
-                { label: 'Dépenses', value: totalDepenses, color: '#a04a4a', emoji: '🛒' },
+                { label: 'Revenus',    value: totalRevenus,    color: '#2a9a5a', emoji: '💶' },
+                { label: 'Factures',   value: totalFactures,   color: '#f0c040', emoji: '🧾' },
+                { label: 'Dépenses',   value: totalDepenses,   color: '#a04a4a', emoji: '🛒' },
                 { label: 'Versements', value: totalVersements, color: '#3a7bd5', emoji: '💰' },
               ].map(item => (
                 <div key={item.label} style={{
@@ -192,8 +288,8 @@ export default function FinanceDashboard() {
               ))}
             </div>
 
-            {/* Graphique dépenses par catégorie */}
-            {depParCategorie.length > 0 && (
+            {/* === DONUT DÉPENSES PAR CATÉGORIE === */}
+            {depensesParCategorie.length > 0 && (
               <div style={{
                 background: '#0c0c24',
                 border: '1px solid rgba(255,255,255,0.08)',
@@ -202,87 +298,49 @@ export default function FinanceDashboard() {
                 marginBottom: 20,
               }}>
                 <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>
-                  Dépenses par catégorie
+                  Répartition des dépenses
                 </div>
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={depParCategorie} layout="vertical" margin={{ left: 0, right: 10 }}>
-                    <XAxis type="number" hide />
-                    <Tooltip
-                      formatter={(v) => [`${fmt(v)} €`]}
-                      contentStyle={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: 8 }}
-                      labelStyle={{ color: '#8bb8f0', fontSize: 11 }}
-                      itemStyle={{ color: '#c8e0ff', fontSize: 12 }}
-                    />
-                    <Bar dataKey="montant" radius={[0, 4, 4, 0]}>
-                      {depParCategorie.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie
+                      data={depensesParCategorie}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {depensesParCategorie.map((entry, index) => (
+                        <Cell key={index} fill={entry.color} />
                       ))}
-                    </Bar>
-                  </BarChart>
+                    </Pie>
+                    <Tooltip
+                      formatter={(value) => [`${value.toFixed(2)} €`]}
+                      contentStyle={{ background: '#0c0c24', border: '1px solid #1a1a3a', borderRadius: '8px', color: '#c8e0ff' }}
+                    />
+                  </PieChart>
                 </ResponsiveContainer>
+
+                {/* Légende custom */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                  {depensesParCategorie.map((item, i) => {
+                    const pct = totalDepCat > 0 ? Math.round((item.value / totalDepCat) * 100) : 0
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
+                        <span style={{ color: '#c8e0ff', fontSize: 13, flex: 1 }}>{item.emoji} {item.name}</span>
+                        <span style={{ color: '#c8e0ff', fontSize: 13, fontWeight: 600 }}>{fmt(item.value)} €</span>
+                        <span style={{ color: '#3a5080', fontSize: 12, minWidth: 32, textAlign: 'right' }}>{pct}%</span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </>
         )}
       </div>
-
-      {/* FAB + Dépense */}
-      {mois && (
-        <button
-          onClick={() => setShowDepenseModal(true)}
-          style={{
-            position: 'fixed', bottom: 80, right: 20,
-            width: 52, height: 52, borderRadius: '50%',
-            background: '#3a7bd5', border: 'none', color: '#fff',
-            fontSize: 24, cursor: 'pointer', zIndex: 100,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 16px rgba(58,123,213,0.4)',
-          }}
-        >+</button>
-      )}
-
-      {/* Modal dépense rapide */}
-      {showDepenseModal && (
-        <div
-          onClick={() => setShowDepenseModal(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background: '#0c0c24', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxWidth: 430 }}
-          >
-            <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 16, marginBottom: 20 }}>+ Dépense rapide</div>
-            <input
-              placeholder="Description"
-              value={newDep.label}
-              onChange={e => setNewDep(d => ({ ...d, label: e.target.value }))}
-              style={{ width: '100%', background: '#060611', border: '1px solid #1a1a3a', borderRadius: 8, padding: '10px 12px', color: '#c8e0ff', fontSize: 14, marginBottom: 12, boxSizing: 'border-box' }}
-            />
-            <input
-              placeholder="Montant (€)"
-              type="number"
-              value={newDep.montant}
-              onChange={e => setNewDep(d => ({ ...d, montant: e.target.value }))}
-              style={{ width: '100%', background: '#060611', border: '1px solid #1a1a3a', borderRadius: 8, padding: '10px 12px', color: '#c8e0ff', fontSize: 14, marginBottom: 12, boxSizing: 'border-box' }}
-            />
-            <select
-              value={newDep.categorie}
-              onChange={e => setNewDep(d => ({ ...d, categorie: e.target.value }))}
-              style={{ width: '100%', background: '#060611', border: '1px solid #1a1a3a', borderRadius: 8, padding: '10px 12px', color: '#c8e0ff', fontSize: 14, marginBottom: 20, boxSizing: 'border-box' }}
-            >
-              {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
-            </select>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setShowDepenseModal(false)} style={{ flex: 1, background: '#1a1a3a', border: 'none', borderRadius: 8, padding: '12px', color: '#3a5080', fontSize: 14, cursor: 'pointer' }}>
-                Annuler
-              </button>
-              <button onClick={ajouterDepense} style={{ flex: 2, background: '#3a7bd5', border: 'none', borderRadius: 8, padding: '12px', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-                Ajouter
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </PageWrapper>
   )
 }

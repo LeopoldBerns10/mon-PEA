@@ -4,14 +4,18 @@ import { supabase } from '../../lib/supabase'
 import PageWrapper from '../../components/PageWrapper'
 
 const CATEGORIES = [
-  { id: 'nourriture',  label: 'Nourriture',  emoji: '🛒' },
-  { id: 'essence',     label: 'Essence',      emoji: '⛽' },
-  { id: 'loisirs',     label: 'Loisirs',      emoji: '🎮' },
-  { id: 'restaurant',  label: 'Restaurant',   emoji: '🍔' },
-  { id: 'sante',       label: 'Santé',        emoji: '💊' },
-  { id: 'vetements',   label: 'Vêtements',    emoji: '👕' },
-  { id: 'transport',   label: 'Transport',    emoji: '🚗' },
-  { id: 'autre',       label: 'Autre',        emoji: '📦' },
+  { id: 'nourriture',             label: 'Nourriture',               emoji: '🛒' },
+  { id: 'essence',                label: 'Essence',                  emoji: '⛽' },
+  { id: 'loisirs',                label: 'Loisirs',                  emoji: '🎮' },
+  { id: 'restaurant',             label: 'Restaurant',               emoji: '🍔' },
+  { id: 'sante',                  label: 'Santé',                    emoji: '💊' },
+  { id: 'vetements',              label: 'Vêtements',                emoji: '👕' },
+  { id: 'transport',              label: 'Transport',                emoji: '🚗' },
+  { id: 'complement_alimentaire', label: 'Compléments alimentaires', emoji: '💪' },
+  { id: 'jeux_video',             label: 'Jeux Vidéo',               emoji: '🕹️' },
+  { id: 'sortie_bar',             label: 'Sorties Bar',              emoji: '🍺' },
+  { id: 'cigarette',              label: 'Cigarette électronique',   emoji: '💨' },
+  { id: 'autre',                  label: 'Autre',                    emoji: '📦' },
 ]
 
 function fmt(n) {
