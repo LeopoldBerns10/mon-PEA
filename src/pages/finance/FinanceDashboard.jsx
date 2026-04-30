@@ -72,32 +72,14 @@ export default function FinanceDashboard() {
   const totalDepenses = data.depenses.reduce((s, d) => s + Number(d.montant), 0)
   const totalVersements = data.versements.reduce((s, v) => s + Number(v.montant), 0)
 
-  // Déterminer si le mois affiché est courant, passé ou futur
-  const moisDate = mois ? new Date(mois.mois) : null
-  const debutMoisCourant = new Date(today.getFullYear(), today.getMonth(), 1)
-  const debutMoisAffiche = moisDate ? new Date(moisDate.getFullYear(), moisDate.getMonth(), 1) : null
-  const isCurrentMonth = debutMoisAffiche && debutMoisAffiche.getTime() === debutMoisCourant.getTime()
-  const isPastMonth = debutMoisAffiche && debutMoisAffiche < debutMoisCourant
-
-  // Factures déjà déduites du compte (selon le jour de prélèvement)
-  const facturesDeduites = data.factures.reduce((s, f) => {
-    const montant = Number(f.montant_reel ?? f.montant_prevu ?? 0)
-    if (isPastMonth) return s + montant              // mois passé : tout est prélevé
-    if (!isCurrentMonth) return s                    // mois futur : rien encore prélevé
-    // mois courant : prélevé si le jour est passé OU si marqué payé
-    const jourPrelev = f.jour_prelevement || 1
-    return (jourPrelev <= today.getDate() || f.paye) ? s + montant : s
-  }, 0)
-
-  // Factures encore à venir ce mois (pas encore sur le compte)
-  const facturesAVenir = totalFactures - facturesDeduites
-
-  // Ce qui est sur le compte maintenant
-  const soldeSurCompte = totalRevenus - totalDepenses - facturesDeduites
-  // Ce qu'il restera après toutes les factures
-  const soldeApresFactures = totalRevenus - totalDepenses - totalFactures
-  // Après versements en plus
-  const soldeFinal = soldeApresFactures - totalVersements
+  // Factures payées (marquées paye=true) vs encore à prélever
+  const facturesPayees = data.factures.reduce((s, f) =>
+    f.paye ? s + Number(f.montant_reel ?? f.montant_prevu ?? 0) : s, 0)
+  const facturesNonPayees = totalFactures - facturesPayees
+  // solde_actuel = revenus - factures_payees - dépenses - versements
+  const soldeActuel = totalRevenus - facturesPayees - totalDepenses - totalVersements
+  // solde_final_estime = solde_actuel - factures_non_payees
+  const soldeFinalEstime = soldeActuel - facturesNonPayees
 
   const depParCategorie = CATEGORIES.map(cat => ({
     name: cat.emoji + ' ' + cat.label,
@@ -163,47 +145,30 @@ export default function FinanceDashboard() {
           </div>
         ) : (
           <>
-            {/* === CARTE DOUBLE SOLDE === */}
+            {/* === CARTE SOLDE === */}
             <div style={{
               background: '#0c0c24',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: 16,
-              overflow: 'hidden',
+              padding: '20px',
               marginBottom: 16,
             }}>
-              {/* Bloc 1 : Sur le compte maintenant */}
-              <div style={{
-                padding: '20px 20px 16px',
-                borderBottom: '1px solid rgba(255,255,255,0.06)',
-                background: soldeSurCompte >= 0 ? 'rgba(42,154,90,0.05)' : 'rgba(160,74,74,0.05)',
-              }}>
-                <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 }}>
-                  💳 Sur mon compte maintenant
-                </div>
-                <div style={{ color: soldeSurCompte >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 34, fontWeight: 800, letterSpacing: -1 }}>
-                  {soldeSurCompte >= 0 ? '+' : ''}{fmt(soldeSurCompte)} €
-                </div>
-                {isCurrentMonth && facturesAVenir > 0 && (
-                  <div style={{ color: '#3a5080', fontSize: 12, marginTop: 4 }}>
-                    {fmt(facturesAVenir)} € de factures encore à venir
-                  </div>
-                )}
+              <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 }}>
+                💳 Solde actuel
               </div>
-
-              {/* Bloc 2 : Après toutes les factures */}
-              <div style={{ padding: '16px 20px 20px' }}>
-                <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 }}>
-                  🔮 Après toutes les factures
-                </div>
-                <div style={{ color: soldeApresFactures >= 0 ? '#c8e0ff' : '#a04a4a', fontSize: 24, fontWeight: 700 }}>
-                  {soldeApresFactures >= 0 ? '+' : ''}{fmt(soldeApresFactures)} €
-                </div>
-                {totalVersements > 0 && (
-                  <div style={{ color: '#3a5080', fontSize: 12, marginTop: 4 }}>
-                    Après versements : {soldeFinal >= 0 ? '+' : ''}{fmt(soldeFinal)} €
-                  </div>
-                )}
+              <div style={{ color: soldeActuel >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 34, fontWeight: 800, letterSpacing: -1 }}>
+                {soldeActuel >= 0 ? '+' : ''}{fmt(soldeActuel)} €
               </div>
+              {facturesNonPayees > 0 && (
+                <div style={{ color: '#f0c040', fontSize: 13, marginTop: 10 }}>
+                  Dont encore à prélever : -{fmt(facturesNonPayees)} €
+                </div>
+              )}
+              {facturesNonPayees > 0 && (
+                <div style={{ color: soldeFinalEstime >= 0 ? '#2a9a5a' : '#a04a4a', fontSize: 17, fontWeight: 700, marginTop: 4 }}>
+                  Solde final estimé : {soldeFinalEstime >= 0 ? '+' : ''}{fmt(soldeFinalEstime)} €
+                </div>
+              )}
             </div>
 
             {/* Grille 2×2 */}

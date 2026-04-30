@@ -151,6 +151,15 @@ export default function FinanceMoisDetail() {
     fetchAll()
   }
 
+  const totalRevenus = revenus.reduce((s, r) => s + Number(r.montant), 0)
+  const totalFactures = factures.reduce((s, f) => s + Number(f.montant_reel ?? f.montant_prevu ?? 0), 0)
+  const totalFacturesPayees = factures.reduce((s, f) => f.paye ? s + Number(f.montant_reel ?? f.montant_prevu ?? 0) : s, 0)
+  const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0)
+  const totalVersements = versements.reduce((s, v) => s + Number(v.montant), 0)
+  const depParCategorie = CATEGORIES
+    .map(cat => ({ cat, total: depenses.filter(d => d.categorie === cat.id).reduce((s, d) => s + Number(d.montant), 0) }))
+    .filter(x => x.total > 0)
+
   const cloture = mois?.cloture === true
   const moisLabel = mois ? new Date(mois.mois).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : ''
 
@@ -217,7 +226,12 @@ export default function FinanceMoisDetail() {
         )}
 
         {/* Revenus */}
-        <Section title="💶 Revenus" onAdd={cloture ? null : () => openAdd('revenu')}>
+        <Section title="💶 Revenus" onAdd={cloture ? null : () => openAdd('revenu')} footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#3a5080', fontSize: 13 }}>Total revenus</span>
+            <span style={{ color: '#2a9a5a', fontWeight: 700, fontSize: 14 }}>+{fmt(totalRevenus)} €</span>
+          </div>
+        }>
           {revenus.map(r => (
             <LigneItem key={r.id}
               label={r.label}
@@ -229,7 +243,12 @@ export default function FinanceMoisDetail() {
         </Section>
 
         {/* Factures */}
-        <Section title="🧾 Factures" onAdd={cloture ? null : () => openAdd('facture')}>
+        <Section title="🧾 Factures" onAdd={cloture ? null : () => openAdd('facture')} footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#3a5080', fontSize: 13 }}>Payées / Total</span>
+            <span style={{ color: '#f0c040', fontWeight: 700, fontSize: 14 }}>{fmt(totalFacturesPayees)} € / {fmt(totalFactures)} €</span>
+          </div>
+        }>
           {factures.map(f => (
             <div key={f.id} style={{
               display: 'flex',
@@ -270,7 +289,20 @@ export default function FinanceMoisDetail() {
         </Section>
 
         {/* Dépenses */}
-        <Section title="🛒 Dépenses" onAdd={cloture ? null : () => openAdd('depense')}>
+        <Section title="🛒 Dépenses" onAdd={cloture ? null : () => openAdd('depense')} footer={
+          <div>
+            {depParCategorie.map(x => (
+              <div key={x.cat.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{ color: '#3a5080', fontSize: 12 }}>{x.cat.emoji} {x.cat.label}</span>
+                <span style={{ color: '#3a5080', fontSize: 12 }}>{fmt(x.total)} €</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: depParCategorie.length > 0 ? 6 : 0 }}>
+              <span style={{ color: '#c8e0ff', fontSize: 13, fontWeight: 600 }}>Total</span>
+              <span style={{ color: '#a04a4a', fontWeight: 700, fontSize: 14 }}>{fmt(totalDepenses)} €</span>
+            </div>
+          </div>
+        }>
           {depenses.map(d => {
             const cat = CATEGORIES.find(c => c.id === d.categorie)
             return (
@@ -286,7 +318,12 @@ export default function FinanceMoisDetail() {
         </Section>
 
         {/* Versements */}
-        <Section title="💰 Versements épargne" onAdd={cloture ? null : () => openAdd('versement')}>
+        <Section title="💰 Versements épargne" onAdd={cloture ? null : () => openAdd('versement')} footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#3a5080', fontSize: 13 }}>Total versé</span>
+            <span style={{ color: '#3a7bd5', fontWeight: 700, fontSize: 14 }}>{fmt(totalVersements)} €</span>
+          </div>
+        }>
           {versements.map(v => (
             <LigneItem key={v.id}
               label={v.destination}
@@ -383,7 +420,7 @@ export default function FinanceMoisDetail() {
   )
 }
 
-function Section({ title, onAdd, children }) {
+function Section({ title, onAdd, footer, children }) {
   return (
     <div style={{
       background: '#0c0c24',
@@ -402,6 +439,11 @@ function Section({ title, onAdd, children }) {
         )}
       </div>
       {children}
+      {footer && (
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.07)', paddingTop: 10, marginTop: 6 }}>
+          {footer}
+        </div>
+      )}
     </div>
   )
 }
