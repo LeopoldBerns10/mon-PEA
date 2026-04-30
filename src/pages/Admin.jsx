@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
 
 function fmt(dateStr) {
   if (!dateStr) return '—'
@@ -16,44 +15,39 @@ export default function Admin() {
   useEffect(() => { fetchProfiles() }, [])
 
   async function fetchProfiles() {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setProfiles(data || [])
+    const res = await fetch('/api/admin-profiles')
+    const data = await res.json()
+    setProfiles(Array.isArray(data) ? data : [])
     setLoading(false)
   }
 
-  async function approuver(profile) {
-    await supabase
-      .from('profiles')
-      .update({ statut: 'approved', approved_at: new Date().toISOString() })
-      .eq('id', profile.id)
+  async function updateStatut(userId, statut) {
+    await fetch('/api/admin-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, statut }),
+    })
+  }
 
+  async function approuver(profile) {
+    await updateStatut(profile.id, 'approved')
     fetch('/api/notify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'approved', to: profile.email, nom: profile.nom || profile.email }),
     }).catch(() => {})
-
     fetchProfiles()
   }
 
   async function refuser(profile) {
     if (!confirm(`Refuser l'accès à ${profile.nom || profile.email} ?`)) return
-    await supabase
-      .from('profiles')
-      .update({ statut: 'rejected' })
-      .eq('id', profile.id)
+    await updateStatut(profile.id, 'rejected')
     fetchProfiles()
   }
 
   async function revoquer(profile) {
     if (!confirm(`Révoquer l'accès de ${profile.nom || profile.email} ?`)) return
-    await supabase
-      .from('profiles')
-      .update({ statut: 'pending', approved_at: null })
-      .eq('id', profile.id)
+    await updateStatut(profile.id, 'pending')
     fetchProfiles()
   }
 
