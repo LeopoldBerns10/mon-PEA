@@ -30,7 +30,6 @@ export default function FinanceMois() {
 
     setMoisList(rows || [])
 
-    // Fetch syntheses for each month
     const syns = {}
     await Promise.all((rows || []).map(async (m) => {
       const [r, f, d] = await Promise.all([
@@ -51,12 +50,25 @@ export default function FinanceMois() {
     setCreating(true)
     const { data: { user } } = await supabase.auth.getUser()
 
-    // Compute next month
     const today = new Date()
-    const nextMois = new Date(today.getFullYear(), today.getMonth(), 1)
-    const moisStr = nextMois.toISOString().split('T')[0]
+    const premierJour = new Date(today.getFullYear(), today.getMonth(), 1)
+    const moisStr = premierJour.toISOString().split('T')[0]
 
-    // Create mois_finance
+    // Vérifier si ce mois existe déjà
+    const { data: existing } = await supabase
+      .from('mois_finance')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('mois', moisStr)
+      .single()
+
+    if (existing) {
+      navigate(`/finance/mois/${existing.id}`)
+      setCreating(false)
+      return
+    }
+
+    // Créer le nouveau mois
     const { data: newMois, error } = await supabase
       .from('mois_finance')
       .insert({ user_id: user.id, mois: moisStr })
@@ -64,12 +76,12 @@ export default function FinanceMois() {
       .single()
 
     if (error) {
-      alert('Ce mois existe déjà ou erreur : ' + error.message)
+      alert('Erreur création du mois : ' + error.message)
       setCreating(false)
       return
     }
 
-    // Copy active factures_fixes into factures_mois
+    // Copier les factures fixes actives
     const { data: fixes } = await supabase
       .from('factures_fixes')
       .select('*')
@@ -89,8 +101,40 @@ export default function FinanceMois() {
       )
     }
 
+    // Reporter le solde du dernier mois clôturé
+    const { data: dernierCloture } = await supabase
+      .from('mois_finance')
+      .select('solde_fin')
+      .eq('user_id', user.id)
+      .eq('cloture', true)
+      .order('mois', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (dernierCloture?.solde_fin > 0) {
+      await supabase.from('revenus').insert({
+        user_id: user.id,
+        mois_id: newMois.id,
+        label: 'Report mois précédent',
+        montant: dernierCloture.solde_fin,
+      })
+      await supabase.from('mois_finance').update({
+        solde_reporte: dernierCloture.solde_fin,
+      }).eq('id', newMois.id)
+    }
+
     setCreating(false)
     navigate(`/finance/mois/${newMois.id}`)
+  }
+
+  async function supprimerMois(e, mois) {
+    e.stopPropagation()
+    const label = getMoisLabel(mois.mois)
+    if (!confirm(`Supprimer le mois de ${label} et toutes ses données ?`)) return
+
+    // Les FK sont ON DELETE CASCADE, un seul DELETE suffit
+    await supabase.from('mois_finance').delete().eq('id', mois.id)
+    fetchMois()
   }
 
   if (loading) {
@@ -104,7 +148,6 @@ export default function FinanceMois() {
   return (
     <PageWrapper>
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px' }}>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 18 }}>Mes mois</div>
           <button
@@ -142,36 +185,70 @@ export default function FinanceMois() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {moisList.map(m => {
               const syn = syntheses[m.id] || {}
-              const solde = syn.solde ?? 0
+              const solde = m.cloture ? m.solde_fin : (syn.solde ?? 0)
               return (
                 <div
                   key={m.id}
                   onClick={() => navigate(`/finance/mois/${m.id}`)}
                   style={{
                     background: '#0c0c24',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    border: `1px solid ${m.cloture ? 'rgba(42,154,90,0.25)' : 'rgba(255,255,255,0.08)'}`,
                     borderRadius: 12,
-                    padding: '16px 18px',
+                    padding: '14px 16px',
                     cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
                   }}
                 >
-                  <div>
-                    <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 15, textTransform: 'capitalize' }}>
-                      {getMoisLabel(m.mois)}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 15, textTransform: 'capitalize' }}>
+                        {getMoisLabel(m.mois)}
+                      </div>
+                      {m.cloture && (
+                        <span style={{
+                          background: 'rgba(42,154,90,0.15)',
+                          color: '#2a9a5a',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          padding: '2px 8px',
+                          textTransform: 'uppercase',
+                          letterSpacing: 1,
+                        }}>Clôturé</span>
+                      )}
                     </div>
-                    <div style={{ color: '#3a5080', fontSize: 12, marginTop: 4 }}>
-                      Revenus {fmt(syn.revenus || 0)} € · Dépenses {fmt(syn.depenses || 0)} €
+                    <div style={{
+                      color: (solde ?? 0) >= 0 ? '#2a9a5a' : '#a04a4a',
+                      fontWeight: 700,
+                      fontSize: 15,
+                    }}>
+                      {(solde ?? 0) >= 0 ? '+' : ''}{fmt(solde)} €
                     </div>
                   </div>
-                  <div style={{
-                    color: solde >= 0 ? '#2a9a5a' : '#a04a4a',
-                    fontWeight: 700,
-                    fontSize: 16,
-                  }}>
-                    {solde >= 0 ? '+' : ''}{fmt(solde)} €
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ color: '#3a5080', fontSize: 12 }}>
+                      {m.cloture
+                        ? `Épargné : ${fmt(m.total_epargne)} € · Solde : ${fmt(m.solde_fin)} €`
+                        : `Revenus ${fmt(syn.revenus || 0)} € · Dépenses ${fmt(syn.depenses || 0)} €`
+                      }
+                    </div>
+                    <button
+                      onClick={(e) => supprimerMois(e, m)}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid #a04a4a',
+                        color: '#a04a4a',
+                        borderRadius: '999px',
+                        padding: '3px 12px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        marginLeft: 8,
+                        flexShrink: 0,
+                      }}
+                    >
+                      Supprimer
+                    </button>
                   </div>
                 </div>
               )

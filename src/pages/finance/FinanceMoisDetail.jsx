@@ -30,6 +30,28 @@ const INPUT_STYLE = {
   boxSizing: 'border-box',
 }
 
+const BTN_MODIFIER = {
+  background: 'transparent',
+  border: '1px solid #3a7bd5',
+  color: '#3a7bd5',
+  borderRadius: '999px',
+  padding: '4px 14px',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: 'pointer',
+}
+
+const BTN_SUPPRIMER = {
+  background: 'transparent',
+  border: '1px solid #a04a4a',
+  color: '#a04a4a',
+  borderRadius: '999px',
+  padding: '4px 14px',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: 'pointer',
+}
+
 export default function FinanceMoisDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -38,7 +60,7 @@ export default function FinanceMoisDetail() {
   const [factures, setFactures] = useState([])
   const [depenses, setDepenses] = useState([])
   const [versements, setVersements] = useState([])
-  const [modal, setModal] = useState(null) // { type, mode, data }
+  const [modal, setModal] = useState(null)
   const [form, setForm] = useState({})
 
   useEffect(() => { fetchAll() }, [id])
@@ -109,33 +131,105 @@ export default function FinanceMoisDetail() {
     fetchAll()
   }
 
+  async function cloturerMois() {
+    const moisLabel = mois ? new Date(mois.mois).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : ''
+    if (!confirm(`Clôturer le mois de ${moisLabel} ?`)) return
+
+    const totalRevenus = revenus.reduce((s, r) => s + Number(r.montant), 0)
+    const totalFactures = factures.reduce((s, f) => s + Number(f.montant_reel ?? f.montant_prevu ?? 0), 0)
+    const totalDepenses = depenses.reduce((s, d) => s + Number(d.montant), 0)
+    const totalVersements = versements.reduce((s, v) => s + Number(v.montant), 0)
+    const solde_fin = totalRevenus - totalFactures - totalDepenses - totalVersements
+    const total_epargne = totalVersements
+
+    await supabase.from('mois_finance').update({
+      cloture: true,
+      solde_fin,
+      total_epargne,
+    }).eq('id', id)
+
+    fetchAll()
+  }
+
+  const cloture = mois?.cloture === true
   const moisLabel = mois ? new Date(mois.mois).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : ''
 
   return (
     <PageWrapper>
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        {/* Back + titre */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <button
             onClick={() => navigate('/finance/mois')}
             style={{ background: 'none', border: 'none', color: '#3a7bd5', fontSize: 20, cursor: 'pointer', padding: 4 }}
           >←</button>
           <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 17, textTransform: 'capitalize' }}>{moisLabel}</div>
+          {cloture && (
+            <span style={{
+              background: 'rgba(42,154,90,0.15)',
+              color: '#2a9a5a',
+              fontSize: 10,
+              fontWeight: 700,
+              borderRadius: 6,
+              padding: '2px 8px',
+              textTransform: 'uppercase',
+              letterSpacing: 1,
+            }}>Clôturé</span>
+          )}
         </div>
 
+        {/* Bandeau clôture */}
+        {cloture && (
+          <div style={{
+            background: 'rgba(42,154,90,0.08)',
+            border: '1px solid rgba(42,154,90,0.25)',
+            borderRadius: 12,
+            padding: '14px 16px',
+            marginBottom: 16,
+          }}>
+            <div style={{ color: '#2a9a5a', fontWeight: 700, fontSize: 14, marginBottom: 8 }}>✅ MOIS CLÔTURÉ</div>
+            <div style={{ display: 'flex', gap: 24 }}>
+              <div>
+                <div style={{ color: '#3a5080', fontSize: 11 }}>Épargne du mois</div>
+                <div style={{ color: '#2a9a5a', fontWeight: 700, fontSize: 15 }}>+{fmt(mois.total_epargne)} €</div>
+              </div>
+              <div>
+                <div style={{ color: '#3a5080', fontSize: 11 }}>Solde reporté</div>
+                <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 15 }}>{fmt(mois.solde_fin)} €</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Report mois précédent */}
+        {mois?.solde_reporte > 0 && !cloture && (
+          <div style={{
+            background: 'rgba(58,123,213,0.08)',
+            border: '1px solid rgba(58,123,213,0.2)',
+            borderRadius: 10,
+            padding: '10px 14px',
+            marginBottom: 14,
+            color: '#5a9aee',
+            fontSize: 13,
+          }}>
+            📥 Report mois précédent : +{fmt(mois.solde_reporte)} €
+          </div>
+        )}
+
         {/* Revenus */}
-        <Section title="💶 Revenus" onAdd={() => openAdd('revenu')}>
+        <Section title="💶 Revenus" onAdd={cloture ? null : () => openAdd('revenu')}>
           {revenus.map(r => (
             <LigneItem key={r.id}
               label={r.label}
               montant={`${fmt(r.montant)} €`}
-              onEdit={() => openEdit('revenu', r)}
-              onDelete={() => deleteItem('revenu', r.id)}
+              onEdit={cloture ? null : () => openEdit('revenu', r)}
+              onDelete={cloture ? null : () => deleteItem('revenu', r.id)}
             />
           ))}
         </Section>
 
         {/* Factures */}
-        <Section title="🧾 Factures" onAdd={() => openAdd('facture')}>
+        <Section title="🧾 Factures" onAdd={cloture ? null : () => openAdd('facture')}>
           {factures.map(f => (
             <div key={f.id} style={{
               display: 'flex',
@@ -145,14 +239,15 @@ export default function FinanceMoisDetail() {
               gap: 8,
             }}>
               <button
-                onClick={() => togglePaye(f)}
+                onClick={cloture ? undefined : () => togglePaye(f)}
+                disabled={cloture}
                 style={{
                   width: 22,
                   height: 22,
                   borderRadius: 6,
                   border: `2px solid ${f.paye ? '#2a9a5a' : '#1a1a3a'}`,
                   background: f.paye ? '#2a9a5a' : 'transparent',
-                  cursor: 'pointer',
+                  cursor: cloture ? 'default' : 'pointer',
                   flexShrink: 0,
                   display: 'flex',
                   alignItems: 'center',
@@ -168,13 +263,13 @@ export default function FinanceMoisDetail() {
                   {f.montant_reel != null ? ` · Réel ${fmt(f.montant_reel)} €` : ''}
                 </div>
               </div>
-              <BoutonActions onEdit={() => openEdit('facture', f)} onDelete={() => deleteItem('facture', f.id)} />
+              {!cloture && <BoutonActions onEdit={() => openEdit('facture', f)} onDelete={() => deleteItem('facture', f.id)} />}
             </div>
           ))}
         </Section>
 
         {/* Dépenses */}
-        <Section title="🛒 Dépenses" onAdd={() => openAdd('depense')}>
+        <Section title="🛒 Dépenses" onAdd={cloture ? null : () => openAdd('depense')}>
           {depenses.map(d => {
             const cat = CATEGORIES.find(c => c.id === d.categorie)
             return (
@@ -182,24 +277,46 @@ export default function FinanceMoisDetail() {
                 label={`${cat?.emoji || '📦'} ${d.label}`}
                 sublabel={d.date}
                 montant={`${fmt(d.montant)} €`}
-                onEdit={() => openEdit('depense', d)}
-                onDelete={() => deleteItem('depense', d.id)}
+                onEdit={cloture ? null : () => openEdit('depense', d)}
+                onDelete={cloture ? null : () => deleteItem('depense', d.id)}
               />
             )
           })}
         </Section>
 
         {/* Versements */}
-        <Section title="💰 Versements épargne" onAdd={() => openAdd('versement')}>
+        <Section title="💰 Versements épargne" onAdd={cloture ? null : () => openAdd('versement')}>
           {versements.map(v => (
             <LigneItem key={v.id}
               label={v.destination}
               montant={`${fmt(v.montant)} €`}
-              onEdit={() => openEdit('versement', v)}
-              onDelete={() => deleteItem('versement', v.id)}
+              onEdit={cloture ? null : () => openEdit('versement', v)}
+              onDelete={cloture ? null : () => deleteItem('versement', v.id)}
             />
           ))}
         </Section>
+
+        {/* Bouton clôturer */}
+        {!cloture && (
+          <button
+            onClick={cloturerMois}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '1px solid #2a9a5a',
+              color: '#2a9a5a',
+              borderRadius: 10,
+              padding: '14px',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              marginTop: 8,
+              marginBottom: 24,
+            }}
+          >
+            ✅ Clôturer le mois
+          </button>
+        )}
       </div>
 
       {/* Modal */}
@@ -276,10 +393,12 @@ function Section({ title, onAdd, children }) {
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 14 }}>{title}</div>
-        <button
-          onClick={onAdd}
-          style={{ background: '#1a1a3a', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#3a7bd5', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}
-        >+</button>
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            style={{ background: '#1a1a3a', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#3a7bd5', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}
+          >+</button>
+        )}
       </div>
       {children}
     </div>
@@ -299,7 +418,7 @@ function LigneItem({ label, sublabel, montant, onEdit, onDelete }) {
         {sublabel && <div style={{ color: '#3a5080', fontSize: 12 }}>{sublabel}</div>}
       </div>
       <div style={{ color: '#f0c040', fontWeight: 600, fontSize: 14, marginRight: 10 }}>{montant}</div>
-      <BoutonActions onEdit={onEdit} onDelete={onDelete} />
+      {(onEdit || onDelete) && <BoutonActions onEdit={onEdit} onDelete={onDelete} />}
     </div>
   )
 }
@@ -307,8 +426,30 @@ function LigneItem({ label, sublabel, montant, onEdit, onDelete }) {
 function BoutonActions({ onEdit, onDelete }) {
   return (
     <div style={{ display: 'flex', gap: 6 }}>
-      <button onClick={onEdit} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 }}>✏️</button>
-      <button onClick={onDelete} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 }}>🗑️</button>
+      {onEdit && (
+        <button onClick={onEdit} style={{
+          background: 'transparent',
+          border: '1px solid #3a7bd5',
+          color: '#3a7bd5',
+          borderRadius: '999px',
+          padding: '4px 14px',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}>Modifier</button>
+      )}
+      {onDelete && (
+        <button onClick={onDelete} style={{
+          background: 'transparent',
+          border: '1px solid #a04a4a',
+          color: '#a04a4a',
+          borderRadius: '999px',
+          padding: '4px 14px',
+          fontSize: '12px',
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}>Supprimer</button>
+      )}
     </div>
   )
 }

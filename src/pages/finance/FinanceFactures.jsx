@@ -169,8 +169,8 @@ export default function FinanceFactures() {
                 <div style={{ color: '#f0c040', fontWeight: 700, fontSize: 15 }}>{fmt(f.montant)} €</div>
 
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => openEdit(f)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 }}>✏️</button>
-                  <button onClick={() => deleteFacture(f.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 }}>🗑️</button>
+                  <button onClick={() => openEdit(f)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '999px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Modifier</button>
+                  <button onClick={() => deleteFacture(f.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '999px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Supprimer</button>
                 </div>
               </div>
             ))}

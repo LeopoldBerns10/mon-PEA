@@ -54,13 +54,13 @@ export default function FinancePlacements() {
 
     const [injRes, ordRes, venRes] = await Promise.all([
       supabase.from('injections').select('montant').eq('user_id', user.id),
-      supabase.from('ordres').select('nb_parts, pru, frais').eq('user_id', user.id),
-      supabase.from('ventes').select('nb_parts, prix_vente_reel, frais_vente').eq('user_id', user.id),
+      supabase.from('ordres').select('prix_ttc').eq('user_id', user.id),
+      supabase.from('ventes').select('nb_parts, prix_vente, frais').eq('user_id', user.id),
     ])
 
     const totalInjecte = (injRes.data || []).reduce((s, i) => s + Number(i.montant), 0)
-    const totalDepense = (ordRes.data || []).reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
-    const totalRecupere = (venRes.data || []).reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente_reel) - Number(v.frais_vente || 0), 0)
+    const totalDepense = (ordRes.data || []).reduce((s, o) => s + Number(o.prix_ttc), 0)
+    const totalRecupere = (venRes.data || []).reduce((s, v) => s + (Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais || 0)), 0)
 
     setPeaLiquidites(totalInjecte - totalDepense + totalRecupere)
   }
@@ -126,7 +126,6 @@ export default function FinancePlacements() {
       </div>
 
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px' }}>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 18 }}>Mes placements</div>
           <button
@@ -188,9 +187,27 @@ export default function FinancePlacements() {
                       {TYPE_LABELS[p.type] || p.type}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button onClick={() => openEdit(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 }}>✏️</button>
-                    <button onClick={() => deletePlacement(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 }}>🗑️</button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => openEdit(p)} style={{
+                      background: 'transparent',
+                      border: '1px solid #3a7bd5',
+                      color: '#3a7bd5',
+                      borderRadius: '999px',
+                      padding: '4px 14px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>Modifier</button>
+                    <button onClick={() => deletePlacement(p.id)} style={{
+                      background: 'transparent',
+                      border: '1px solid #a04a4a',
+                      color: '#a04a4a',
+                      borderRadius: '999px',
+                      padding: '4px 14px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>Supprimer</button>
                   </div>
                 </div>
                 <div style={{ color: '#2a9a5a', fontWeight: 800, fontSize: 24 }}>{fmt(p.solde)} €</div>
