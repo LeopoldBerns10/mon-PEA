@@ -15,7 +15,7 @@ export default function Login() {
   async function handleGoogle() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: 'https://mon-pea-web.vercel.app/dashboard' },
+      options: { redirectTo: 'https://mon-pea-webapp.vercel.app/dashboard' },
     })
   }
 
