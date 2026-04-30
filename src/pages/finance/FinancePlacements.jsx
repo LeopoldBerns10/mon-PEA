@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { getPrixMultiple } from '../../services/prixLive'
 import PageWrapper from '../../components/PageWrapper'
 
 const TYPE_LABELS = {
@@ -27,16 +28,18 @@ const INPUT_STYLE = {
   boxSizing: 'border-box',
 }
 
+function isOuvert(o) { return !o.statut || o.statut === 'ouvert' }
+
 export default function FinancePlacements() {
   const navigate = useNavigate()
   const [placements, setPlacements] = useState([])
-  const [peaLiquidites, setPeaLiquidites] = useState(0)
+  const [peaData, setPeaData] = useState({ liquidites: 0, valeurPositions: 0, valeurPF: 0, loading: true })
   const [modal, setModal] = useState(null)
   const [form, setForm] = useState({ nom: '', type: 'livret', solde: '', taux: '', mis_a_jour: new Date().toISOString().split('T')[0] })
 
   useEffect(() => {
     fetchPlacements()
-    fetchPeaLiquidites()
+    fetchPeaData()
   }, [])
 
   async function fetchPlacements() {
@@ -49,20 +52,47 @@ export default function FinancePlacements() {
     setPlacements(data || [])
   }
 
-  async function fetchPeaLiquidites() {
+  async function fetchPeaData() {
     const { data: { user } } = await supabase.auth.getUser()
 
-    const [injRes, ordRes, venRes] = await Promise.all([
+    const [injRes, ordRes, venRes, actRes] = await Promise.all([
       supabase.from('injections').select('montant').eq('user_id', user.id),
-      supabase.from('ordres').select('prix_ttc').eq('user_id', user.id),
+      supabase.from('ordres').select('indice, nb_parts, pru, frais, statut').eq('user_id', user.id),
       supabase.from('ventes').select('nb_parts, prix_vente, frais').eq('user_id', user.id),
+      supabase.from('actifs').select('ticker, ticker_yahoo'),
     ])
 
-    const totalInjecte = (injRes.data || []).reduce((s, i) => s + Number(i.montant), 0)
-    const totalDepense = (ordRes.data || []).reduce((s, o) => s + Number(o.prix_ttc), 0)
-    const totalRecupere = (venRes.data || []).reduce((s, v) => s + (Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais || 0)), 0)
+    const injections = injRes.data || []
+    const ordres = ordRes.data || []
+    const ventes = venRes.data || []
+    const actifs = actRes.data || []
 
-    setPeaLiquidites(totalInjecte - totalDepense + totalRecupere)
+    const totalInjecte = injections.reduce((s, i) => s + Number(i.montant), 0)
+    const totalDepense = ordres.reduce((s, o) => s + Number(o.nb_parts) * Number(o.pru) + Number(o.frais), 0)
+    const totalRecupere = ventes.reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais || 0), 0)
+    const liquidites = totalInjecte - totalDepense + totalRecupere
+
+    // Regrouper les positions ouvertes
+    const posMap = {}
+    ordres.filter(isOuvert).forEach(o => {
+      if (!posMap[o.indice]) posMap[o.indice] = { nbParts: 0, coutTotal: 0 }
+      posMap[o.indice].nbParts += Number(o.nb_parts)
+      posMap[o.indice].coutTotal += Number(o.nb_parts) * Number(o.pru)
+    })
+
+    // Récupérer les prix live
+    const actifsEnPF = actifs.filter(a => posMap[a.ticker])
+    const prixLive = actifsEnPF.length > 0 ? await getPrixMultiple(actifsEnPF) : {}
+
+    let valeurPositions = 0
+    Object.entries(posMap).forEach(([indice, p]) => {
+      const prix = prixLive[indice]
+      valeurPositions += prix ? p.nbParts * prix : p.coutTotal
+    })
+
+    const valeurPF = liquidites + valeurPositions
+
+    setPeaData({ liquidites, valeurPositions, valeurPF, loading: false })
   }
 
   function openAdd() {
@@ -107,7 +137,7 @@ export default function FinancePlacements() {
   }
 
   const totalPlacements = placements.reduce((s, p) => s + Number(p.solde), 0)
-  const patrimoineTotal = totalPlacements + Math.max(0, peaLiquidites)
+  const patrimoineTotal = totalPlacements + Math.max(0, peaData.valeurPF)
 
   return (
     <PageWrapper>
@@ -122,7 +152,9 @@ export default function FinancePlacements() {
         textAlign: 'center',
       }}>
         <div style={{ color: '#3a5080', fontSize: 11, textTransform: 'uppercase', letterSpacing: 2 }}>Patrimoine total</div>
-        <div style={{ color: '#f0c040', fontWeight: 800, fontSize: 28 }}>{fmt(patrimoineTotal)} €</div>
+        <div style={{ color: '#f0c040', fontWeight: 800, fontSize: 28 }}>
+          {peaData.loading ? '—' : fmt(patrimoineTotal)} €
+        </div>
       </div>
 
       <div style={{ maxWidth: 430, margin: '0 auto', padding: '16px' }}>
@@ -144,12 +176,31 @@ export default function FinancePlacements() {
           padding: '18px 16px',
           marginBottom: 12,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 15 }}>Mon PEA</div>
             <span style={{ background: '#1e3a6e', color: '#5a9aee', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '2px 8px' }}>AUTO</span>
           </div>
-          <div style={{ color: '#3a7bd5', fontWeight: 800, fontSize: 24, marginBottom: 4 }}>{fmt(Math.max(0, peaLiquidites))} €</div>
-          <div style={{ color: '#3a5080', fontSize: 12, marginBottom: 12 }}>Liquidités disponibles sur PEA</div>
+
+          {peaData.loading ? (
+            <div style={{ color: '#3a5080', fontSize: 13 }}>Chargement des prix...</div>
+          ) : (
+            <>
+              <div style={{ color: '#3a7bd5', fontWeight: 800, fontSize: 28, marginBottom: 2 }}>
+                {fmt(peaData.valeurPF)} €
+              </div>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                <div>
+                  <div style={{ color: '#3a5080', fontSize: 11 }}>Positions ouvertes</div>
+                  <div style={{ color: '#c8e0ff', fontWeight: 600, fontSize: 13 }}>{fmt(peaData.valeurPositions)} €</div>
+                </div>
+                <div>
+                  <div style={{ color: '#3a5080', fontSize: 11 }}>Liquidités</div>
+                  <div style={{ color: '#c8e0ff', fontWeight: 600, fontSize: 13 }}>{fmt(peaData.liquidites)} €</div>
+                </div>
+              </div>
+            </>
+          )}
+
           <button
             onClick={() => navigate('/dashboard')}
             style={{ background: 'none', border: 'none', color: '#3a7bd5', fontSize: 13, cursor: 'pointer', padding: 0 }}
@@ -188,26 +239,8 @@ export default function FinancePlacements() {
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => openEdit(p)} style={{
-                      background: 'transparent',
-                      border: '1px solid #3a7bd5',
-                      color: '#3a7bd5',
-                      borderRadius: '999px',
-                      padding: '4px 14px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>Modifier</button>
-                    <button onClick={() => deletePlacement(p.id)} style={{
-                      background: 'transparent',
-                      border: '1px solid #a04a4a',
-                      color: '#a04a4a',
-                      borderRadius: '999px',
-                      padding: '4px 14px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>Supprimer</button>
+                    <button onClick={() => openEdit(p)} style={{ background: 'transparent', border: '1px solid #3a7bd5', color: '#3a7bd5', borderRadius: '999px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Modifier</button>
+                    <button onClick={() => deletePlacement(p.id)} style={{ background: 'transparent', border: '1px solid #a04a4a', color: '#a04a4a', borderRadius: '999px', padding: '4px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Supprimer</button>
                   </div>
                 </div>
                 <div style={{ color: '#2a9a5a', fontWeight: 800, fontSize: 24 }}>{fmt(p.solde)} €</div>

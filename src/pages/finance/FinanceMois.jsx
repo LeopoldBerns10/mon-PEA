@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import PageWrapper from '../../components/PageWrapper'
 
+const MOIS_NOMS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
+
 function fmt(n) {
   return Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -11,12 +13,22 @@ function getMoisLabel(date) {
   return new Date(date).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 }
 
+function getAnneesDisponibles() {
+  const anneeActuelle = new Date().getFullYear()
+  return [anneeActuelle - 2, anneeActuelle - 1, anneeActuelle, anneeActuelle + 1]
+}
+
 export default function FinanceMois() {
   const navigate = useNavigate()
   const [moisList, setMoisList] = useState([])
   const [syntheses, setSyntheses] = useState({})
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
+
+  const today = new Date()
+  const [pickerMois, setPickerMois] = useState(today.getMonth()) // 0-11
+  const [pickerAnnee, setPickerAnnee] = useState(today.getFullYear())
 
   useEffect(() => { fetchMois() }, [])
 
@@ -46,13 +58,12 @@ export default function FinanceMois() {
     setLoading(false)
   }
 
-  async function nouveauMois() {
+  async function creerMois() {
     setCreating(true)
     const { data: { user } } = await supabase.auth.getUser()
 
-    const today = new Date()
-    const premierJour = new Date(today.getFullYear(), today.getMonth(), 1)
-    const moisStr = premierJour.toISOString().split('T')[0]
+    // Construire la date au format YYYY-MM-DD (1er du mois sélectionné)
+    const moisStr = `${pickerAnnee}-${String(pickerMois + 1).padStart(2, '0')}-01`
 
     // Vérifier si ce mois existe déjà
     const { data: existing } = await supabase
@@ -63,12 +74,13 @@ export default function FinanceMois() {
       .single()
 
     if (existing) {
-      navigate(`/finance/mois/${existing.id}`)
+      setShowPicker(false)
       setCreating(false)
+      navigate(`/finance/mois/${existing.id}`)
       return
     }
 
-    // Créer le nouveau mois
+    // Créer le mois
     const { data: newMois, error } = await supabase
       .from('mois_finance')
       .insert({ user_id: user.id, mois: moisStr })
@@ -76,7 +88,7 @@ export default function FinanceMois() {
       .single()
 
     if (error) {
-      alert('Erreur création du mois : ' + error.message)
+      alert('Erreur : ' + error.message)
       setCreating(false)
       return
     }
@@ -101,12 +113,13 @@ export default function FinanceMois() {
       )
     }
 
-    // Reporter le solde du dernier mois clôturé
+    // Reporter le solde du dernier mois clôturé AVANT ce mois
     const { data: dernierCloture } = await supabase
       .from('mois_finance')
-      .select('solde_fin')
+      .select('solde_fin, mois')
       .eq('user_id', user.id)
       .eq('cloture', true)
+      .lt('mois', moisStr)
       .order('mois', { ascending: false })
       .limit(1)
       .single()
@@ -115,7 +128,7 @@ export default function FinanceMois() {
       await supabase.from('revenus').insert({
         user_id: user.id,
         mois_id: newMois.id,
-        label: 'Report mois précédent',
+        label: `Report ${getMoisLabel(dernierCloture.mois)}`,
         montant: dernierCloture.solde_fin,
       })
       await supabase.from('mois_finance').update({
@@ -123,6 +136,7 @@ export default function FinanceMois() {
       }).eq('id', newMois.id)
     }
 
+    setShowPicker(false)
     setCreating(false)
     navigate(`/finance/mois/${newMois.id}`)
   }
@@ -131,8 +145,6 @@ export default function FinanceMois() {
     e.stopPropagation()
     const label = getMoisLabel(mois.mois)
     if (!confirm(`Supprimer le mois de ${label} et toutes ses données ?`)) return
-
-    // Les FK sont ON DELETE CASCADE, un seul DELETE suffit
     await supabase.from('mois_finance').delete().eq('id', mois.id)
     fetchMois()
   }
@@ -151,8 +163,7 @@ export default function FinanceMois() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 18 }}>Mes mois</div>
           <button
-            onClick={nouveauMois}
-            disabled={creating}
+            onClick={() => setShowPicker(true)}
             style={{
               background: '#3a7bd5',
               color: '#fff',
@@ -162,10 +173,9 @@ export default function FinanceMois() {
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',
-              opacity: creating ? 0.6 : 1,
             }}
           >
-            {creating ? '...' : '+ Nouveau mois'}
+            + Nouveau mois
           </button>
         </div>
 
@@ -256,6 +266,105 @@ export default function FinanceMois() {
           </div>
         )}
       </div>
+
+      {/* Modal sélecteur mois/année */}
+      {showPicker && (
+        <div
+          onClick={() => setShowPicker(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#0c0c24', borderRadius: '20px 20px 0 0', padding: 24, width: '100%', maxWidth: 430 }}
+          >
+            <div style={{ color: '#c8e0ff', fontWeight: 700, fontSize: 16, marginBottom: 20 }}>
+              📅 Créer un mois
+            </div>
+
+            {/* Sélecteur mois */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ color: '#3a5080', fontSize: 12, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Mois</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {MOIS_NOMS.map((nom, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setPickerMois(idx)}
+                    style={{
+                      background: pickerMois === idx ? '#3a7bd5' : '#060611',
+                      border: `1px solid ${pickerMois === idx ? '#3a7bd5' : '#1a1a3a'}`,
+                      color: pickerMois === idx ? '#fff' : '#3a5080',
+                      borderRadius: 8,
+                      padding: '8px 4px',
+                      fontSize: 12,
+                      fontWeight: pickerMois === idx ? 700 : 400,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {nom.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sélecteur année */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ color: '#3a5080', fontSize: 12, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Année</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {getAnneesDisponibles().map(annee => (
+                  <button
+                    key={annee}
+                    onClick={() => setPickerAnnee(annee)}
+                    style={{
+                      flex: 1,
+                      background: pickerAnnee === annee ? '#3a7bd5' : '#060611',
+                      border: `1px solid ${pickerAnnee === annee ? '#3a7bd5' : '#1a1a3a'}`,
+                      color: pickerAnnee === annee ? '#fff' : '#3a5080',
+                      borderRadius: 8,
+                      padding: '10px 4px',
+                      fontSize: 13,
+                      fontWeight: pickerAnnee === annee ? 700 : 400,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {annee}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Aperçu */}
+            <div style={{
+              background: '#060611',
+              border: '1px solid #1a1a3a',
+              borderRadius: 8,
+              padding: '10px 14px',
+              marginBottom: 20,
+              color: '#c8e0ff',
+              fontSize: 14,
+              textAlign: 'center',
+              textTransform: 'capitalize',
+            }}>
+              {MOIS_NOMS[pickerMois]} {pickerAnnee}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => setShowPicker(false)}
+                style={{ flex: 1, background: '#1a1a3a', border: 'none', borderRadius: 8, padding: '12px', color: '#3a5080', fontSize: 14, cursor: 'pointer' }}
+              >
+                Annuler
+              </button>
+              <button
+                onClick={creerMois}
+                disabled={creating}
+                style={{ flex: 2, background: '#3a7bd5', border: 'none', borderRadius: 8, padding: '12px', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: creating ? 0.6 : 1 }}
+              >
+                {creating ? 'Création...' : `Créer ${MOIS_NOMS[pickerMois]}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageWrapper>
   )
 }
