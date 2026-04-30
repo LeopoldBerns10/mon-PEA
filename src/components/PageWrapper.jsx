@@ -7,6 +7,7 @@ const PEA_ROUTES = ['/dashboard', '/ordres', '/injections', '/ventes', '/actifs'
 export default function PageWrapper({ children }) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const isAdmin = sessionStorage.getItem('userRole') === 'admin'
 
   const isFinance = pathname.startsWith('/finance')
   const actif = isFinance ? 'finance' : 'pea'
@@ -28,6 +29,26 @@ export default function PageWrapper({ children }) {
             padding: '10px 16px',
           }}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/admin')}
+              title="Administration"
+              style={{
+                background: 'transparent',
+                border: '1px solid #1a1a3a',
+                color: '#3a5080',
+                borderRadius: '999px',
+                padding: '6px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                letterSpacing: 0.5,
+              }}
+            >
+              ⚙ Admin
+            </button>
+          )}
           <div style={{
             display: 'flex',
             background: '#0c0c24',
@@ -68,6 +89,7 @@ export default function PageWrapper({ children }) {
             >
               💰 Finance
             </button>
+          </div>
           </div>
         </div>
 

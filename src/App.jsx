@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import ProtectedRoute from './components/ProtectedRoute'
+import ProtectedRoute, { AdminRoute } from './components/ProtectedRoute'
 import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
@@ -12,6 +12,7 @@ import FinanceMois from './pages/finance/FinanceMois'
 import FinanceMoisDetail from './pages/finance/FinanceMoisDetail'
 import FinanceFactures from './pages/finance/FinanceFactures'
 import FinancePlacements from './pages/finance/FinancePlacements'
+import Admin from './pages/Admin'
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/finance/mois/:id" element={<ProtectedRoute><FinanceMoisDetail /></ProtectedRoute>} />
         <Route path="/finance/factures" element={<ProtectedRoute><FinanceFactures /></ProtectedRoute>} />
         <Route path="/finance/placements" element={<ProtectedRoute><FinancePlacements /></ProtectedRoute>} />
+        <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
       </Routes>
     </BrowserRouter>
   )
