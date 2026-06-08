@@ -99,8 +99,6 @@ export default function Dashboard() {
       const ordresOuverts = (ordres || []).filter(isOuvert)
       const totalMontantRecupere = (ventes || []).reduce((s, v) => s + Number(v.nb_parts) * Number(v.prix_vente) - Number(v.frais), 0)
       const liquidites = totalInjecte - totalDepense + totalMontantRecupere
-      const gainNet = liquidites - totalInjecte
-      const gainPct = totalInjecte > 0 ? (gainNet / totalInjecte) * 100 : 0
 
       const posMap = {}
       ordresOuverts.forEach(o => {
@@ -125,8 +123,14 @@ export default function Dashboard() {
       })
 
       const valeurPF = liquidites + valeurPositions
+      const gainNet = valeurPF - totalInjecte
+      const gainPct = totalInjecte > 0 ? (gainNet / totalInjecte) * 100 : 0
 
-      setStats({ totalInjecte, liquidites, valeurPF, gainNet, gainPct })
+      const gainPositions = positionsArr.reduce((s, p) => s + p.gainEuros, 0)
+      const totalCoutPositions = Object.values(posMap).reduce((s, p) => s + p.coutTotal, 0)
+      const gainPositionsPct = totalCoutPositions > 0 ? (gainPositions / totalCoutPositions) * 100 : 0
+
+      setStats({ totalInjecte, liquidites, valeurPF, gainNet, gainPct, gainPositions, gainPositionsPct })
       setPositions(positionsArr.filter(p => p.nbParts > 0.0001))
       setInjRaw(injections || [])
       setVentesRaw(ventes || [])
@@ -258,6 +262,17 @@ export default function Dashboard() {
           <p className="text-[32px] md:text-[40px] font-black tracking-tight text-text-primary">
             {loading ? '—' : fmt(stats?.valeurPF)}
           </p>
+          {!loading && positions.length > 0 && stats?.gainPositions != null && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+              <p className="font-mono uppercase text-[9px] tracking-[2px] text-text-muted">Positions actives</p>
+              <span style={{ color: gainColor(stats.gainPositions), fontWeight: 700, fontSize: 14 }}>
+                {stats.gainPositions >= 0 ? '+' : ''}{fmt(stats.gainPositions)}
+              </span>
+              <span style={{ color: gainColor(stats.gainPositions), fontWeight: 600, fontSize: 13 }}>
+                {fmtPct(stats.gainPositionsPct)}
+              </span>
+            </div>
+          )}
           {!loading && sparkData.length > 1 && (
             <div style={{ marginTop: 12, height: 60 }}>
               <ResponsiveContainer width="100%" height="100%">
